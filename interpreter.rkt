@@ -6,6 +6,14 @@
 
 (require "simpleParser.rkt")
 
+
+;; Possible steps:
+; 1. Write M_state, M_bool, M_int
+; 2. Write AddBinding, LookupBinding, RemoveBinding
+; 3. Do denotational semantics for anything we haven't done
+; 4. Implement with the mappings/bindings we've done
+
+
 ; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
 ; (statement1 statement2 ...)
 ; statement 	<statement> ::= <declare> | <assign> | <return> | <if> | <while>
