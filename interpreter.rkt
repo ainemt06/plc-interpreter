@@ -19,12 +19,16 @@
 ;;;; ---------------------------------------------------------
 
 (define first-index 0)
+(define value-of-binding car)
+(define index-of-binding cdr)
+(define operator car)
+(define operand1 cadr)
+(define operand2 caddr)
+
 (define initial-state (cons '() '()))
 (define get-state-names (lambda (state) (car state)))
 (define get-state-values (lambda (state) (cdr state)))
 (define return-state (lambda (names vals) (cons names vals)))
-(define value-of-binding car)
-(define index-of-binding cdr)
 
 (define type-err (error 'type "Parameter type mismatch"))
 (define missing-err (error 'missing "Var not found in state"))
@@ -53,35 +57,33 @@
 ;; make tail recursive
 (define remove-item-at-pos
     (lambda (pos lis)
-    (cond
-        ((not (number? pos)) type-err)
-        ((null? lis) unbound-err)
-        ((zero? pos) (cdr lis))
-        (else (cons (car lis) (remove-item-at-pos (- pos 1) (cdr lis)))))))
+        (cond
+            ((not (number? pos)) type-err)
+            ((null? lis) unbound-err)
+            ((zero? pos) (cdr lis))
+            (else (cons (car lis) (remove-item-at-pos (- pos 1) (cdr lis)))))))
 
 ;;;; ---------------------------------------------------------
 ;;;; MAPPINGS
 ;;;; ---------------------------------------------------------
 
 (define m-int
-(lambda (atom state)
-    (if
-      ((number? atom) atom)
-      (else
-        (let ([val (value-of-binding (lookup-binding atom state))])
-              (if (number? val)
-                  val
-                  type-err))))))    
+    (lambda (atom state)
+        (if (number? atom) 
+            atom
+            (let ([val (value-of-binding (lookup-binding atom state))])
+                  (if (number? val)
+                      val
+                      type-err)))))    
 
 (define m-bool
-(lambda (atom state)
-    (if
-      ((boolean? atom) atom)
-      (else
-        (let ([val (value-of-binding (lookup-binding atom state))])
-              (if (boolean? val)
-                  val
-                  type-err))))))    
+    (lambda (atom state)
+        (if (boolean? atom)
+            atom
+            (let ([val (value-of-binding (lookup-binding atom state))])
+                 (if (boolean? val)
+                     val
+                     type-err)))))    
 
 
 (define m-name
@@ -92,6 +94,11 @@
                   atom))))
 
 
+(define m-state
+    (lambda (construct state)
+    ; insert giant cond of everything we can handle atm
+    ))
+
 ;;;; ---------------------------------------------------------
 ;;;; BINDING OPERATIONS
 ;;;; ---------------------------------------------------------
@@ -99,8 +106,8 @@
 ;; in newest -> oldest order
 (define add-binding 
     (lambda (name value state)
-    (return-state (cons name (get-state-names state))
-                  (cons value (get-state-values state)))))
+        (return-state (cons name (get-state-names state))
+                      (cons value (get-state-values state)))))
 
 (define lookup-binding
     (lambda (name state)
@@ -109,10 +116,13 @@
                (cons value . index))))
 
 (define remove-binding
-(lambda (name state)
-    (let ([binding (lookup-binding name state)])
-         (return-state (remove-item-at-pos (index-of-binding binding) (get-state-names state))
-                       (remove-item-at-pos (index-of-binding binding) (get-state-values state))))))
+    (lambda (name state)
+        (let ([binding (lookup-binding name state)])
+             (return-state (remove-item-at-pos (index-of-binding binding) (get-state-names state))
+                           (remove-item-at-pos (index-of-binding binding) (get-state-values state))))))
+
+
+
 
 
 ; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
