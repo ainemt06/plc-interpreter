@@ -15,7 +15,7 @@
 ; 4. Implement with the mappings/bindings we've done
 
 ;;;; ---------------------------------------------------------
-;;;; CONSTANTS/SIMPLE ABSTRACTIONS
+;;;; CONSTANTS/ERRORS/SIMPLE ABSTRACTIONS
 ;;;; ---------------------------------------------------------
 
 (define first-index 0)
@@ -26,6 +26,9 @@
 (define value-of-binding car)
 (define index-of-binding cdr)
 
+(define type-err (error 'type "Parameter type mismatch"))
+(define missing-err (error 'missing "Var not found in state"))
+(define unbound-err (error 'unbound "List position out of bounds"))
 
 ;;;; ---------------------------------------------------------
 ;;;; LIST MANIPULATION HELPERS
@@ -34,14 +37,16 @@
 (define return-pos-of-item
     (lambda (item lis acc)
         (cond
-            ((or (null? lis) (null? item)) error)
+            ((null? item) type-err)
+            ((null? lis) missing-err)
             ((eq? item (car lis)) acc)
             (else (return-pos-of-item item (cdr lis) (+ acc 1))))))
 
 (define return-item-at-pos
     (lambda (pos lis)
         (cond
-            ((or (null? lis) (not (number? pos))) error)
+            ((not (number? pos)) type-err)
+            ((null? lis) unbound-err)
             ((zero? pos) (car lis))
             (else (return-item-at-pos (- pos 1) (cdr lis))))))
 
@@ -49,9 +54,10 @@
 (define remove-item-at-pos
     (lambda (pos lis)
     (cond
-    ((or (null? lis) (not (number? pos))) error)
-    ((zero? pos) (cdr lis))
-    (else (cons (car lis) (remove-item-at-pos (- pos 1) (cdr lis)))))))
+        ((not (number? pos)) type-err)
+        ((null? lis) unbound-err)
+        ((zero? pos) (cdr lis))
+        (else (cons (car lis) (remove-item-at-pos (- pos 1) (cdr lis)))))))
 
 ;;;; ---------------------------------------------------------
 ;;;; MAPPINGS
@@ -65,7 +71,7 @@
         (let ([val (value-of-binding (lookup-binding atom state))])
               (if (number? val)
                   val
-                  error))))))    
+                  type-err))))))    
 
 (define m-bool
 (lambda (atom state)
@@ -75,15 +81,14 @@
         (let ([val (value-of-binding (lookup-binding atom state))])
               (if (boolean? val)
                   val
-                  error))))))    
+                  type-err))))))    
 
 
-;; COME BACK TO THIS WHEN WE CUSTOMIZE ERROR MESSAGES - EQ WON'T WORK
 (define m-name
     (lambda (atom state)
         (let ([n (lookup-binding atom state)])
-              (if (eq? n error)
-                  error
+              (if (or (eq? n type-err) (eq? n missing-err) (eq? n unbound-err))
+                  n
                   atom))))
 
 
