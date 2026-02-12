@@ -13,6 +13,53 @@
 ; 3. Do denotational semantics for anything we haven't done
 ; 4. Implement with the mappings/bindings we've done
 
+(define first-index 0)
+(define initial-state (cons '() '()))
+(define get-state-names (lambda (state) (car state)))
+(define get-state-values (lambda (state) (cdr state)))
+(define return-state (lambda (names vals) (cons names vals)))
+
+
+;; most recent bindings first
+(define add-binding 
+    (lambda (name value state)
+    (cons (cons name get-state-names)
+          (cons value get-state-values))
+    (return-state get-state-names get-state-values)))
+
+(define lookup-binding
+    (lambda (name state)
+        (let* ([index (return-pos-of-item name (get-state-names state) first-index)]
+               [value (return-item-at-pos index (get-state-values state))])
+               (cons value index))))
+
+(define remove-binding
+(lambda (name state)
+    (let ([binding (lookup-binding name state)])
+        (return-state (remove-item-at-pos (cdr binding) get-state-names)
+                      (remove-item-at-pos (cdr binding) get-state-values)))))
+
+(define return-pos-of-item
+    (lambda (item lis acc)
+        (cond
+            ((or (null? lis) (null? item) error))
+            ((eq? item (car lis)) acc)
+            (else (return-pos-of-item item (cdr lis) (+ acc 1))))))
+
+(define return-item-at-pos
+    (lambda (pos lis)
+        (cond
+            ((or (null? lis) (not (number? pos))) error)
+            ((zero? pos) (car lis))
+            (else (return-item-at-pos (- pos 1) (cdr lis))))))
+
+;; make tail recursive
+(define remove-item-at-pos
+    (lambda (pos lis)
+    (cond
+    ((or (null? lis) (not (number? pos))) error)
+    ((zero? pos) (cdr lis))
+    (else (cons (car lis) (remove-item-at-pos (- pos 1) (cdr lis)))))))
 
 ; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
 ; (statement1 statement2 ...)
