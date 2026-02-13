@@ -29,6 +29,7 @@
 (define get-state-names (lambda (state) (car state)))
 (define get-state-values (lambda (state) (cdr state)))
 (define return-state (lambda (names vals) (cons names vals)))
+(define return-val (lambda (v) v))
 
 (define type-err (error 'type "Parameter type mismatch"))
 (define missing-err (error 'missing "Var not found in state"))
@@ -62,6 +63,14 @@
             ((null? lis) unbound-err)
             ((zero? pos) (cdr lis))
             (else (cons (car lis) (remove-item-at-pos (- pos 1) (cdr lis)))))))
+
+(define remove-item-at-pos
+    (lambda (pos lis return)
+        (cond
+            ((not (number? pos)) type-err)
+            ((null? lis) unbound-err)
+            ((zero? pos) (return (cdr lis)))
+            (else (remove-item-at-pos (- pos 1) (cdr lis) (lambda (v) (return (cons (car lis)) v)))))))
 
 ;;;; ---------------------------------------------------------
 ;;;; MAPPINGS
