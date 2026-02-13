@@ -67,6 +67,8 @@
 ;;;; MAPPINGS
 ;;;; ---------------------------------------------------------
 
+
+;; may be too nested
 (define m-int
     (lambda (atom state)
         (if (number? atom) 
@@ -122,7 +124,22 @@
              (return-state (remove-item-at-pos index (get-state-names state))
                            (remove-item-at-pos index (get-state-values state))))))
 
+;;;; ---------------------------------------------------------
+;;;; DENOTATIONAL SEMANTICS
+;;;; ---------------------------------------------------------
 
+(define int-value
+(lambda (expr state)
+    (cond
+        ((number? expr) expr)
+        ((symbol? expr) (m-int expr state))
+        ((and (list? expr) (eq? (operator expr) '+)) (+ (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+        ((and (list? expr) (eq? (operator expr) '-)) (- (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+        ((and (list? expr) (eq? (operator expr) '*)) (* (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+        ((and (list? expr) (eq? (operator expr) '/)) (quotient (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+        ((and (list? expr) (eq? (operator expr) '%)) (remainder (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+        ((and (list? expr) (eq? operator '-)) (- 0 (int-value operand1 state)))
+        (else type-err))))
 
 
 ;; what
