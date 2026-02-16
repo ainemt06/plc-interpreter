@@ -55,15 +55,7 @@
             ((zero? pos) (car lis))
             (else (return-item-at-pos (- pos 1) (cdr lis))))))
 
-;; make tail recursive
-(define remove-item-at-pos
-    (lambda (pos lis)
-        (cond
-            ((not (number? pos)) type-err)
-            ((null? lis) unbound-err)
-            ((zero? pos) (cdr lis))
-            (else (cons (car lis) (remove-item-at-pos (- pos 1) (cdr lis)))))))
-
+;; check/debug
 (define remove-item-at-pos
     (lambda (pos lis return)
         (cond
