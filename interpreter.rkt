@@ -26,18 +26,25 @@
 (define operand2 caddr)
 
 (define initial-state (cons '() '()))
+(define acc 0)
 (define get-state-names (lambda (state) (car state)))
 (define get-state-values (lambda (state) (cdr state)))
 (define return-state (lambda (names vals) (cons names vals)))
 (define return-val (lambda (v) v))
 
-(define type-err (error 'type "Parameter type mismatch"))
-(define missing-err (error 'missing "Var not found in state"))
-(define unbound-err (error 'unbound "List position out of bounds"))
+(define (type-err) (error 'type "Parameter type mismatch"))
+(define (missing-err) (error 'missing "Var not found in state"))
+(define (unbound-err) (error 'unbound "List position out of bounds"))
 
 ;;;; ---------------------------------------------------------
 ;;;; LIST MANIPULATION HELPERS
 ;;;; ---------------------------------------------------------
+
+(define len
+(lambda (lis acc)
+(if (null? lis) 
+    acc
+    (len (cdr lis) (+ acc 1)))))
 
 (define return-pos-of-item
     (lambda (item lis acc)
@@ -97,10 +104,10 @@
                   atom))))
 
 
-(define m-state
-    (lambda (construct state)
-    ; insert giant cond of everything we can handle atm
-    ))
+; (define m-state
+;     (lambda (construct state)
+;     ; insert giant cond of everything we can handle atm
+;     ))
 
 ;;;; ---------------------------------------------------------
 ;;;; BINDING OPERATIONS
@@ -116,7 +123,7 @@
     (lambda (name state)
         (let* ([index (return-pos-of-item name (get-state-names state) first-index)]
                [value (return-item-at-pos index (get-state-values state))])
-               (cons value . index))))
+               (cons value index))))
 
 (define remove-binding
     (lambda (name state)
@@ -129,20 +136,38 @@
 ;;;; DENOTATIONAL SEMANTICS
 ;;;; ---------------------------------------------------------
 
+; (define expression
+; (lambda (expr state)
+;     (let int-binding )
+; ))
+
 (define int-value
-(lambda (expr state)
+  (lambda (expr state)
     (cond
-        ((number? expr) expr)
-        ((symbol? expr) (m-int expr state))
-        ((and (list? expr) (eq? (operator expr) '+)) (+ (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-        ((and (list? expr) (eq? (operator expr) '-)) (- (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-        ((and (list? expr) (eq? (operator expr) '*)) (* (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-        ((and (list? expr) (eq? (operator expr) '/)) (quotient (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-        ((and (list? expr) (eq? (operator expr) '%)) (remainder (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-        ((and (list? expr) (eq? operator '-)) (- 0 (int-value operand1 state)))
-        (else type-err))))
-
-
+      ((number? expr) expr)
+      ((symbol? expr) (m-int expr state))
+      ((list? expr)
+       (let ((op (operator expr)))
+         (cond
+           ((eq? op '+)
+            (+ (int-value (operand1 expr) state)
+               (int-value (operand2 expr) state)))
+           ((eq? op '-)
+            (if (= (length expr) 2)
+                (- (int-value (operand1 expr) state)) 
+                (- (int-value (operand1 expr) state)
+                   (int-value (operand2 expr) state)))) 
+           ((eq? op '*)
+            (* (int-value (operand1 expr) state)
+               (int-value (operand2 expr) state)))
+           ((eq? op '/)
+            (quotient (int-value (operand1 expr) state)
+                      (int-value (operand2 expr) state)))
+           ((eq? op '%)
+            (remainder (int-value (operand1 expr) state)
+                       (int-value (operand2 expr) state)))
+           (else type-err))))
+      (else type-err))))
 ;; what
 ; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
 ; (statement1 statement2 ...)
