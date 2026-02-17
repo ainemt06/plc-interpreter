@@ -136,10 +136,15 @@
 ;;;; DENOTATIONAL SEMANTICS
 ;;;; ---------------------------------------------------------
 
-; (define expression
-; (lambda (expr state)
-;     (let int-binding )
-; ))
+(define expression
+(lambda (expr state)
+    (let ([int-binding (int-value expr state)]
+          [bool-binding (condition expr state)])
+          ((cond
+            ((not (eq? type-err int-binding)) int-binding)
+            ((not (eq? type-err bool-binding)) bool-binding)
+            (else parse-err))))))
+
 
 (define int-value
   (lambda (expr state)
