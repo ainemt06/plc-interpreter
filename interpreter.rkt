@@ -26,6 +26,7 @@
 (define operand2 caddr)
 
 (define initial-state (cons '() '()))
+(define acc 0)
 (define get-state-names (lambda (state) (car state)))
 (define get-state-values (lambda (state) (cdr state)))
 (define return-state (lambda (names vals) (cons names vals)))
@@ -38,6 +39,12 @@
 ;;;; ---------------------------------------------------------
 ;;;; LIST MANIPULATION HELPERS
 ;;;; ---------------------------------------------------------
+
+(define len
+(lambda (lis acc)
+(if (null? lis) 
+    acc
+    (len (cdr lis) (+ acc 1)))))
 
 (define return-pos-of-item
     (lambda (item lis acc)
@@ -101,6 +108,10 @@
 ;    (lambda (construct state)
     ; insert giant cond of everything we can handle atm
 ;    ))
+; (define m-state
+;     (lambda (construct state)
+;     ; insert giant cond of everything we can handle atm
+;     ))
 
 ;;;; ---------------------------------------------------------
 ;;;; BINDING OPERATIONS
@@ -117,6 +128,7 @@
         (let* ([index (return-pos-of-item name (get-state-names state) first-index)]
                [value (return-item-at-pos index (get-state-values state))])
                (cons value index))))
+               (cons value index))))
 
 (define remove-binding
     (lambda (name state)
@@ -129,7 +141,18 @@
 ;;;; DENOTATIONAL SEMANTICS
 ;;;; ---------------------------------------------------------
 
+(define expression
+(lambda (expr state)
+    (let ([int-binding (int-value expr state)]
+          [bool-binding (condition expr state)])
+          ((cond
+            ((not (eq? type-err int-binding)) int-binding)
+            ((not (eq? type-err bool-binding)) bool-binding)
+            (else parse-err))))))
+
+
 (define int-value
+  (lambda (expr state)
   (lambda (expr state)
     (cond
       ((number? expr) expr)
@@ -155,6 +178,30 @@
       ((and (list? expr) (eq? (operator expr) '!=))  (eq? (condition (operand1 expr) state) (condition (operand2 expr) state)))
 
  
+      ((number? expr) expr)
+      ((symbol? expr) (m-int expr state))
+      ((list? expr)
+       (let ((op (operator expr)))
+         (cond
+           ((eq? op '+)
+            (+ (int-value (operand1 expr) state)
+               (int-value (operand2 expr) state)))
+           ((eq? op '-)
+            (if (= (length expr) 2)
+                (- (int-value (operand1 expr) state)) 
+                (- (int-value (operand1 expr) state)
+                   (int-value (operand2 expr) state)))) 
+           ((eq? op '*)
+            (* (int-value (operand1 expr) state)
+               (int-value (operand2 expr) state)))
+           ((eq? op '/)
+            (quotient (int-value (operand1 expr) state)
+                      (int-value (operand2 expr) state)))
+           ((eq? op '%)
+            (remainder (int-value (operand1 expr) state)
+                       (int-value (operand2 expr) state)))
+           (else type-err))))
+      (else type-err))))
 ;; what
 ; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
 ; (statement1 statement2 ...)
