@@ -84,7 +84,7 @@
             (let ([val (value-of-binding (lookup-binding atom state))])
                   (if (number? val)
                       val
-                      type-err)))))    
+                      type-err)))))   
 
 (define m-bool
     (lambda (atom state)
@@ -93,7 +93,7 @@
             (let ([val (value-of-binding (lookup-binding atom state))])
                  (if (boolean? val)
                      val
-                     type-err)))))    
+                     type-err)))))   
 
 
 (define m-name
@@ -104,6 +104,10 @@
                   atom))))
 
 
+;(define m-state
+;    (lambda (construct state)
+    ; insert giant cond of everything we can handle atm
+;    ))
 ; (define m-state
 ;     (lambda (construct state)
 ;     ; insert giant cond of everything we can handle atm
@@ -123,6 +127,7 @@
     (lambda (name state)
         (let* ([index (return-pos-of-item name (get-state-names state) first-index)]
                [value (return-item-at-pos index (get-state-values state))])
+               (cons value index))))
                (cons value index))))
 
 (define remove-binding
@@ -160,7 +165,31 @@
 
 (define int-value
   (lambda (expr state)
+  (lambda (expr state)
     (cond
+      ((number? expr) expr)
+      ((symbol? expr) (m-int expr state))
+      ((and (list? expr) (eq? (operator expr) '+)) (+ (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+      ((and (list? expr) (eq? (operator expr) '-)) (- (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+      ((and (list? expr) (eq? (operator expr) '*)) (* (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+      ((and (list? expr) (eq? (operator expr) '/)) (quotient (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+      ((and (list? expr) (eq? (operator expr) '%)) (remainder (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+      ((and (list? expr) (eq? operator '-)) (- 0 (int-value operand1 state)))
+      (else type-err))))
+
+; condition 	<condition> ::= true | false | <name> | <condition> && <condition> | <condition> || <condition> | !<condition> | <int value> < <int value> | <int value> <= <int value> | <int value> > <int value> | <int value> >= <int value> | <expression> == <expression> | <expression> != <expression> 
+; (&& condition condition)
+(define condition
+  (lambda (expr state)
+    (cond
+      ((eq? expr true) #t)
+      ((eq? expr false) #f)
+      ((and (list? expr) (eq? (operator expr) '&&))  (and (condition (operand1 expr) state) (condition (operand2 expr) state)))
+      ((and (list? expr) (eq? (operator expr) '||))  (or (condition (operand1 expr) state) (condition (operand2 expr) state)))
+      ((and (list? expr) (eq? (operator expr) '==))  (eq? (condition (operand1 expr) state) (condition (operand2 expr) state)))
+      ((and (list? expr) (eq? (operator expr) '!=))  (eq? (condition (operand1 expr) state) (condition (operand2 expr) state)))
+
+ 
       ((number? expr) expr)
       ((symbol? expr) (m-int expr state))
       ((list? expr)
@@ -208,5 +237,3 @@
 ; expression 	<expression> ::= <condition> | <int value>
 ; condition 	<condition> ::= true | false | <name> | <condition> && <condition> | <condition> || <condition> | !<condition> | <int value> < <int value> | <int value> <= <int value> | <int value> > <int value> | <int value> >= <int value> | <expression> == <expression> | <expression> != <expression> 
 ; (&& condition condition)
-; int value 	<int value> ::= <number> | <name> | <int value> + <int value> | <int value> - <int value> | <int value> * <int value> | <int value> / <int value> | <int value> % <int value> | - <int value>
-; (+ intvalue intvalue)
