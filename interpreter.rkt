@@ -136,6 +136,18 @@
 ;;;; DENOTATIONAL SEMANTICS
 ;;;; ---------------------------------------------------------
 
+(define statement
+    (lambda (expr state)
+    (let ([op (operator expr)])
+        (cond
+            ((eq? op 'if) (if-statement expr state))
+            ((eq? op 'while) (while expr state))
+            ((eq? op 'var) (declare expr state))
+            ((eq? op '=) (assign expr state))
+            ((eq? op 'return) (return expr state))
+            (else type-err)))))
+
+
 (define expression
 (lambda (expr state)
     (let ([int-binding (int-value expr state)]
