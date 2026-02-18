@@ -35,6 +35,7 @@
 (define (type-err) (error 'type "Parameter type mismatch"))
 (define (missing-err) (error 'missing "Var not found in state"))
 (define (unbound-err) (error 'unbound "List position out of bounds"))
+(define (parse-err) (error 'parse "Parsing error"))
 
 ;;;; ---------------------------------------------------------
 ;;;; LIST MANIPULATION HELPERS
@@ -128,7 +129,6 @@
         (let* ([index (return-pos-of-item name (get-state-names state) first-index)]
                [value (return-item-at-pos index (get-state-values state))])
                (cons value index))))
-               (cons value index))))
 
 (define remove-binding
     (lambda (name state)
@@ -141,55 +141,38 @@
 ;;;; DENOTATIONAL SEMANTICS
 ;;;; ---------------------------------------------------------
 
-(define statement
-    (lambda (expr state)
-    (let ([op (operator expr)])
-        (cond
-            ((eq? op 'if) (if-statement expr state))
-            ((eq? op 'while) (while expr state))
-            ((eq? op 'var) (declare expr state))
-            ((eq? op '=) (assign expr state))
-            ((eq? op 'return) (return expr state))
-            (else type-err)))))
+; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
+; (statement1 statement2 ...)
+; (define statment-list
+;  (lambda (s s-list state)
+;    (if (null? s-lis)
+;        (statement s state)
+;        (statment-list (cdr s-list)))))
 
+;(define statement
+;    (lambda (expr state)
+;    (let ([op (operator expr)])
+;        (cond
+;            ((eq? op 'if) (if-statement expr state))
+;            ((eq? op 'while) (while expr state))
+;            ((eq? op 'var) (declare expr state))
+;            ((eq? op '=) (assign expr state))
+;            ((eq? op 'return) (return expr state))
+;            (else type-err)))))
 
 (define expression
-(lambda (expr state)
+  (lambda (expr state)
     (let ([int-binding (int-value expr state)]
           [bool-binding (condition expr state)])
-          ((cond
-            ((not (eq? type-err int-binding)) int-binding)
-            ((not (eq? type-err bool-binding)) bool-binding)
-            (else parse-err))))))
+      ((cond
+         ((not (eq? type-err int-binding)) int-binding)
+         ((not (eq? type-err bool-binding)) bool-binding)
+         (else parse-err))))))
 
 
 (define int-value
   (lambda (expr state)
-  (lambda (expr state)
     (cond
-      ((number? expr) expr)
-      ((symbol? expr) (m-int expr state))
-      ((and (list? expr) (eq? (operator expr) '+)) (+ (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-      ((and (list? expr) (eq? (operator expr) '-)) (- (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-      ((and (list? expr) (eq? (operator expr) '*)) (* (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-      ((and (list? expr) (eq? (operator expr) '/)) (quotient (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-      ((and (list? expr) (eq? (operator expr) '%)) (remainder (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-      ((and (list? expr) (eq? operator '-)) (- 0 (int-value operand1 state)))
-      (else type-err))))
-
-; condition 	<condition> ::= true | false | <name> | <condition> && <condition> | <condition> || <condition> | !<condition> | <int value> < <int value> | <int value> <= <int value> | <int value> > <int value> | <int value> >= <int value> | <expression> == <expression> | <expression> != <expression> 
-; (&& condition condition)
-(define condition
-  (lambda (expr state)
-    (cond
-      ((eq? expr true) #t)
-      ((eq? expr false) #f)
-      ((and (list? expr) (eq? (operator expr) '&&))  (and (condition (operand1 expr) state) (condition (operand2 expr) state)))
-      ((and (list? expr) (eq? (operator expr) '||))  (or (condition (operand1 expr) state) (condition (operand2 expr) state)))
-      ((and (list? expr) (eq? (operator expr) '==))  (eq? (condition (operand1 expr) state) (condition (operand2 expr) state)))
-      ((and (list? expr) (eq? (operator expr) '!=))  (eq? (condition (operand1 expr) state) (condition (operand2 expr) state)))
-
- 
       ((number? expr) expr)
       ((symbol? expr) (m-int expr state))
       ((list? expr)
@@ -214,6 +197,29 @@
                        (int-value (operand2 expr) state)))
            (else type-err))))
       (else type-err))))
+  
+; condition 	<condition> ::= true | false | <name> | <condition> && <condition> | <condition> || <condition> | !<condition> | <int value> < <int value> | <int value> <= <int value> | <int value> > <int value> | <int value> >= <int value> | <expression> == <expression> | <expression> != <expression> 
+; (&& condition condition)
+(define condition
+  (lambda (expr state)
+    (cond
+      ((eq? expr true) #t)
+      ((eq? expr false) #f)
+      ((symbol? expr) (m-bool expr state))
+      ((list? expr)
+       (let ((op (operator expr))) ; Checks for compound conditions
+             (cond
+               ((eq? op '!)) (not (condition (operand1 expr) state)))
+               ((eq? op '&&))  (and (condition (operand1 expr) state) (condition (operand2 expr) state))
+               ((eq? op '||))  (or (condition (operand1 expr) state) (condition (operand2 expr) state))
+;               ((eq? op '==))  (eq? (statement (operand1 expr) state) (statement (operand2 expr) state))
+;               ((eq? op '!=))  (not (eq? (statement (operand1 expr) state) (statement (operand2 expr) state)))
+               ((eq? op '<)) (< (int-value (operand1 expr) state) (int-value (operand2 expr) state))
+               ((eq? op '>)) (> (int-value (operand1 expr) state) (int-value (operand2 expr) state))
+               ((eq? op '>=)) (>= (int-value (operand1 expr) state) (int-value (operand2 expr) state))
+               ((eq? op '<=)) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))))))
+       
+
 ;; what
 ; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
 ; (statement1 statement2 ...)
