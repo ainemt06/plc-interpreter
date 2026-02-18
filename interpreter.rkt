@@ -145,11 +145,11 @@
 
 ; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
 ; (statement1 statement2 ...)
-; (define statment-list
-;  (lambda (s s-list state)
-;    (if (null? s-lis)
-;        (statement s state)
-;        (statment-list (cdr s-list)))))
+(define statement-list
+    (lambda (lis state)
+        (if (null? lis) 
+            state
+            (statement-list (cdr lis) (statement (car lis) state)))))
 
 (define statement
     (lambda (expr state)
