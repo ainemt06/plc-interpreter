@@ -226,8 +226,7 @@
 (define condition
   (lambda (expr state)
     (cond
-      ((eq? expr true) #t)
-      ((eq? expr false) #f)
+      ((boolean? expr) expr)
       ((symbol? expr) (m-bool expr state))
       ((list? expr)
        (let ((op (operator expr))) ; Checks for compound conditions
