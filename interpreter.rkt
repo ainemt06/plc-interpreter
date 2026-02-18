@@ -134,8 +134,8 @@
     (lambda (name state)
         (let* ([binding (lookup-binding name state)]
                [index (index-of-binding binding)])
-             (return-state (remove-item-at-pos index (get-state-names state))
-                           (remove-item-at-pos index (get-state-values state))))))
+             (return-state (remove-item-at-pos index (get-state-names state) return-val)
+                           (remove-item-at-pos index (get-state-values state) return-val)))))
 
 ;;;; ---------------------------------------------------------
 ;;;; DENOTATIONAL SEMANTICS
@@ -161,13 +161,14 @@
 ;            (else type-err)))))
 
 (define expression
-  (lambda (expr state)
+(lambda (expr state)
     (let ([int-binding (int-value expr state)]
           [bool-binding (condition expr state)])
-      ((cond
-         ((not (eq? type-err int-binding)) int-binding)
-         ((not (eq? type-err bool-binding)) bool-binding)
-         (else parse-err))))))
+        (if (eq? int-binding type-err)
+             (if (eq? bool-binding type-err)
+                 parse-err
+                 (return-val bool-binding))
+            (return-val int-binding)))))
 
 
 (define int-value
