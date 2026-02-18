@@ -65,12 +65,14 @@
 
 ;; check/debug
 (define remove-item-at-pos
-    (lambda (pos lis return)
-        (cond
-            ((not (number? pos)) type-err)
-            ((null? lis) unbound-err)
-            ((zero? pos) (return (cdr lis)))
-            (else (remove-item-at-pos (- pos 1) (cdr lis) (lambda (v) (return (cons (car lis)) v)))))))
+  (lambda (pos lis)
+    (cond
+      ((not (number? pos)) type-err)
+      ((null? lis) unbound-err)
+      ((zero? pos) (cdr lis))
+      (else
+        (cons (car lis)
+              (remove-item-at-pos (- pos 1) (cdr lis)))))))
 
 ;;;; ---------------------------------------------------------
 ;;;; MAPPINGS
@@ -134,8 +136,8 @@
     (lambda (name state)
         (let* ([binding (lookup-binding name state)]
                [index (index-of-binding binding)])
-             (return-state (remove-item-at-pos index (get-state-names state) return-val)
-                           (remove-item-at-pos index (get-state-values state) return-val)))))
+             (return-state (remove-item-at-pos index (get-state-names state))
+                           (remove-item-at-pos index (get-state-values state))))))
 
 ;;;; ---------------------------------------------------------
 ;;;; DENOTATIONAL SEMANTICS
@@ -149,18 +151,36 @@
 ;        (statement s state)
 ;        (statment-list (cdr s-list)))))
 
-;(define statement
-;    (lambda (expr state)
-;    (let ([op (operator expr)])
-;        (cond
-;            ((eq? op 'if) (if-statement expr state))
-;            ((eq? op 'while) (while expr state))
-;            ((eq? op 'var) (declare expr state))
-;            ((eq? op '=) (assign expr state))
-;            ((eq? op 'return) (return expr state))
-;            (else type-err)))))
+(define statement
+    (lambda (expr state)
+    (let ([op (operator expr)])
+        (cond
+         ;   ((eq? op 'if) (if-statement expr state))
+          ;  ((eq? op 'while) (while expr state))
+            ((eq? op 'var) (declare expr state))
+            ((eq? op '=) (assign expr state))
+            ((eq? op 'return) (return expr state))
+            (else type-err)))))
 
-(define assign)
+(define declare
+    (lambda (expr state)
+     (if (= (length expr) 2)
+         (add-binding (operand1 expr) 0 state)
+         (add-binding (operand1 expr) (expression (operand2 expr) state) state))))
+
+(define assign ;figure out how to nest
+    (lambda (expr state)
+      (if (eq? (lookup-binding (operand1 expr) state) missing-err) 
+          missing-err
+          (let* ([state1 (remove-binding (operand1 expr) state)]
+                 [state2 (add-binding (operand1 expr) (expression (operand2 expr) state) state1)])
+                 state2))))
+
+; idk
+(define return
+    (lambda (expr state)
+        (expression expr state)))
+
 
 (define expression
 (lambda (expr state)
@@ -212,15 +232,15 @@
       ((list? expr)
        (let ((op (operator expr))) ; Checks for compound conditions
              (cond
-               ((eq? op '!)) (not (condition (operand1 expr) state)))
-               ((eq? op '&&))  (and (condition (operand1 expr) state) (condition (operand2 expr) state))
-               ((eq? op '||))  (or (condition (operand1 expr) state) (condition (operand2 expr) state))
-               ((eq? op '==))  (eq? (expression (operand1 expr) state) (expression (operand2 expr) state))
-               ((eq? op '!=))  (not (eq? (expression (operand1 expr) state) (expression (operand2 expr) state)))
-               ((eq? op '<)) (< (int-value (operand1 expr) state) (int-value (operand2 expr) state))
-               ((eq? op '>)) (> (int-value (operand1 expr) state) (int-value (operand2 expr) state))
-               ((eq? op '>=)) (>= (int-value (operand1 expr) state) (int-value (operand2 expr) state))
-               ((eq? op '<=)) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))))))
+               ((eq? op '!) (not (condition (operand1 expr) state)))
+               ((eq? op '&&)  (and (condition (operand1 expr) state) (condition (operand2 expr) state)))
+               ((eq? op '||)  (or (condition (operand1 expr) state) (condition (operand2 expr) state)))
+               ((eq? op '==)  (eq? (expression (operand1 expr) state) (expression (operand2 expr) state)))
+               ((eq? op '!=)  (not (eq? (expression (operand1 expr) state) (expression (operand2 expr) state))))
+               ((eq? op '<) (< (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+               ((eq? op '>) (> (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+               ((eq? op '>=) (>= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+               ((eq? op '<=) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))))))))
        
 
 ;; what
