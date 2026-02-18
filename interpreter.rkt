@@ -160,6 +160,8 @@
 ;            ((eq? op 'return) (return expr state))
 ;            (else type-err)))))
 
+(define assign)
+
 (define expression
 (lambda (expr state)
     (let ([int-binding (int-value expr state)]
