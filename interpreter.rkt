@@ -179,7 +179,7 @@
 ; idk
 (define return
     (lambda (expr state)
-        (expression expr state)))
+        (expression (operand1 expr) state)))
 
 
 (define expression
