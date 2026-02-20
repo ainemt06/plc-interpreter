@@ -149,16 +149,16 @@
 ;        (statement s state)
 ;        (statment-list (cdr s-list)))))
 
-;(define statement
-;    (lambda (expr state)
-;    (let ([op (operator expr)])
-;        (cond
-;            ((eq? op 'if) (if-statement expr state))
+(define statement
+    (lambda (expr state)
+    (let ([op (operator expr)])
+        (cond
+            ((eq? op 'if) (if-statement expr state))
 ;            ((eq? op 'while) (while expr state))
 ;            ((eq? op 'var) (declare expr state))
 ;            ((eq? op '=) (assign expr state))
 ;            ((eq? op 'return) (return expr state))
-;            (else type-err)))))
+            (else type-err)))))
 
 (define expression
 (lambda (expr state)
@@ -204,8 +204,7 @@
 (define condition
   (lambda (expr state)
     (cond
-      ((eq? expr true) #t)
-      ((eq? expr false) #f)
+      ((boolean? expr) expr)
       ((symbol? expr) (m-bool expr state))
       ((list? expr)
        (let ((op (operator expr))) ; Checks for compound conditions
