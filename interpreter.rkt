@@ -42,10 +42,10 @@
 ;;;; ---------------------------------------------------------
 
 (define len
-(lambda (lis acc)
-(if (null? lis) 
-    acc
-    (len (cdr lis) (+ acc 1)))))
+    (lambda (lis acc)
+        (if (null? lis) 
+            acc
+            (len (cdr lis) (+ acc 1)))))
 
 (define return-pos-of-item
     (lambda (item lis acc)
@@ -151,24 +151,33 @@
 
 (define statement
     (lambda (expr state)
-    (let ([op (operator expr)])
-        (cond
-            ((eq? op 'if) (if-statement expr state))
-;            ((eq? op 'while) (while expr state))
-;            ((eq? op 'var) (declare expr state))
-;            ((eq? op '=) (assign expr state))
-;            ((eq? op 'return) (return expr state))
-            (else type-err)))))
+        (let ([op (operator expr)])
+            (cond
+                ((eq? op 'if) (if-statement expr state))
+    ;            ((eq? op 'while) (while expr state))
+    ;            ((eq? op 'var) (declare expr state))
+    ;            ((eq? op '=) (assign expr state))
+    ;            ((eq? op 'return) (return expr state))
+                (else type-err)))))
+
+; if statement 	<if> ::= if (<condition>) <statement> | if (<condition>) <statement> else <statement>
+; (if condition then-statement optional-else-statement)
+(define if-statement
+    (lambda (expr state)
+        (let ([condition-result (condition (cadr expr) state)])
+            (if (condition-result)
+                (statement (caddr expr) state)
+                (statement (cadddr expr) state)))))
 
 (define expression
-(lambda (expr state)
-    (let ([int-binding (int-value expr state)]
-          [bool-binding (condition expr state)])
-        (if (eq? int-binding type-err)
-             (if (eq? bool-binding type-err)
-                 parse-err
-                 (return-val bool-binding))
-            (return-val int-binding)))))
+    (lambda (expr state)
+        (let ([int-binding (int-value expr state)]
+            [bool-binding (condition expr state)])
+            (if (eq? int-binding type-err)
+                (if (eq? bool-binding type-err)
+                    parse-err
+                    (return-val bool-binding))
+                (return-val int-binding)))))
 
 
 (define int-value
