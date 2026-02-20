@@ -155,7 +155,7 @@
     (lambda (expr state)
     (let ([op (operator expr)])
         (cond
-         ;   ((eq? op 'if) (if-statement expr state))
+            ((eq? op 'if) (if-statement expr state))
           ;  ((eq? op 'while) (while expr state))
             ((eq? op 'var) (declare expr state))
             ((eq? op '=) (assign expr state))
@@ -180,17 +180,6 @@
 (define return
     (lambda (expr state)
         (expression (operand1 expr) state)))
-
-(define statement
-    (lambda (expr state)
-        (let ([op (operator expr)])
-            (cond
-                ((eq? op 'if) (if-statement expr state))
-    ;            ((eq? op 'while) (while expr state))
-    ;            ((eq? op 'var) (declare expr state))
-    ;            ((eq? op '=) (assign expr state))
-    ;            ((eq? op 'return) (return expr state))
-                (else type-err)))))
 
 ; if statement 	<if> ::= if (<condition>) <statement> | if (<condition>) <statement> else <statement>
 ; (if condition then-statement optional-else-statement)
