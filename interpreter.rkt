@@ -135,6 +135,10 @@
 ;;;; DENOTATIONAL SEMANTICS
 ;;;; ---------------------------------------------------------
 
+(define interpret
+    (lambda (filename)
+        (statement-list (parser filename) initial-state)))
+
 ; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
 ; (statement1 statement2 ...)
 (define statement-list
@@ -177,12 +181,13 @@
 
 ; if statement 	<if> ::= if (<condition>) <statement> | if (<condition>) <statement> else <statement>
 ; (if condition then-statement optional-else-statement)
+;check this works when there is no else
 (define if-statement
     (lambda (expr state)
-        (let ([condition-result (condition (cadr expr) state)])
+        (let ([condition-result (condition (operand1 expr) state)])
             (if (condition-result)
-                (statement (caddr expr) state)
-                (statement (cadddr expr) state)))))
+                (statement (operand2 expr) state)
+                (statement (operand3 expr) state)))))
 
 (define expression
     (lambda (expr state)
