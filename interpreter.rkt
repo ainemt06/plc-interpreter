@@ -42,6 +42,7 @@
 ;;;; LIST MANIPULATION HELPERS
 ;;;; ---------------------------------------------------------
 
+; return the index of an item in a list
 (define return-pos-of-item
     (lambda (item lis acc)
         (cond
@@ -50,6 +51,7 @@
             ((eq? item (car lis)) acc)
             (else (return-pos-of-item item (cdr lis) (+ acc 1))))))
 
+; return the item at a given index in a list
 (define return-item-at-pos
     (lambda (pos lis)
         (cond
@@ -58,7 +60,7 @@
             ((zero? pos) (car lis))
             (else (return-item-at-pos (- pos 1) (cdr lis))))))
 
-;; check/debug
+; remove the item at a given index in a list (return the list)
 (define remove-item-at-pos
   (lambda (pos lis)
     (cond
@@ -74,39 +76,33 @@
 ;;;; ---------------------------------------------------------
 
 
-;; may be too nested
+; evaluates the integer value of a mapping
 (define m-int
     (lambda (atom state)
         (if (number? atom) 
-            atom
-            (let ([val (value-of-binding (lookup-binding atom state))])
-                  (if (number? val)
-                      val
+            atom ; return a literal number
+            (let ([val (value-of-binding (lookup-binding atom state))]) 
+                  (if (number? val) ; check if this var is mapped to an int
+                      val 
                       type-err)))))   
 
+; evaluates the boolean value of a mapping
 (define m-bool
     (lambda (atom state)
         (if (boolean? atom)
-            atom
+            atom ; return a literal boolean
             (let ([val (value-of-binding (lookup-binding atom state))])
-                 (if (boolean? val)
+                 (if (boolean? val) ; check if this var is mapped to a boolean
                      val
                      type-err)))))   
 
-
+; check if this symbol is mapped to a value
 (define m-name
     (lambda (atom state)
         (let ([n (lookup-binding atom state)])
-              (if (or (eq? n type-err) (eq? n missing-err) (eq? n unbound-err))
+              (if (or (eq? n type-err) (eq? n missing-err) (eq? n unbound-err)) ; check if it returns an error
                   n
                   atom))))
-
-
-; (define m-state
-;     (lambda (expr state)
-
-;     ))
-
 
 ;;;; ---------------------------------------------------------
 ;;;; BINDING OPERATIONS
@@ -135,18 +131,19 @@
 ;;;; DENOTATIONAL SEMANTICS
 ;;;; ---------------------------------------------------------
 
+; parse a file, then interpret it with the initial state
 (define interpret
     (lambda (filename)
         (statement-list (parser filename) initial-state)))
 
-; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
-; (statement1 statement2 ...)
+; recurse through a list of statements and update the state with each one
 (define statement-list
     (lambda (lis state)
         (if (null? lis) 
-            state
+            state ; return the final state
             (statement-list (cdr lis) (statement (car lis) state)))))
 
+; parse out the type of a statement and evaluate it (basically our M_state)
 (define statement
     (lambda (expr state)
     (let ([op (operator expr)])
@@ -159,53 +156,56 @@
             (else type-err)))))
 
 
-
+; declare and optionally initialize a variable
 (define declare
     (lambda (expr state)
      (if (= (length expr) 2)
-         (add-binding (operand1 expr) 0 state)
+         (add-binding (operand1 expr) 0 state) ; unassigned variables default to 0
          (add-binding (operand1 expr) (expression (operand2 expr) state) state))))
 
-(define assign ;figure out how to nest
+;; set a variable to a value
+(define assign 
     (lambda (expr state)
-      (if (eq? (lookup-binding (operand1 expr) state) missing-err) 
-          missing-err
-          (let* ([state1 (remove-binding (operand1 expr) state)]
+      (if (eq? (lookup-binding (operand1 expr) state) missing-err)  ; if this variable has not been bound to anything, throw an error
+          missing-err 
+          (let* ([state1 (remove-binding (operand1 expr) state)] ; remove the old binding and add the new one
                  [state2 (add-binding (operand1 expr) (expression (operand2 expr) state) state1)])
                  state2))))
 
-; idk
-(define return
+; return/print the value of this statement
+(define return 
     (lambda (expr state)
         (expression (operand1 expr) state)))
 
-; if statement 	<if> ::= if (<condition>) <statement> | if (<condition>) <statement> else <statement>
-; (if condition then-statement optional-else-statement)
+; evaluate one of two statements based on a condition
 ;check this works when there is no else
 (define if-statement
     (lambda (expr state)
-        (let ([condition-result (condition (operand1 expr) state)])
+        (let ([condition-result (condition (operand1 expr) state)]) ; evaluate the condition
             (if (condition-result)
-                (statement (operand2 expr) state)
-                (statement (operand3 expr) state)))))
+                (statement (operand2 expr) state) ; then statement
+                (if (= (length expr) 3)
+                  state
+                  (statement (operand3 expr) state)))))) ; else statement
 
+; evaluate a statement
 (define expression
-    (lambda (expr state)
+    (lambda (expr state) ; evaluate the expression as a condition and an int value
         (let ([int-binding (int-value expr state)]
             [bool-binding (condition expr state)])
-            (if (eq? int-binding type-err)
+            (if (eq? int-binding type-err) ; return the binding that is valid
                 (if (eq? bool-binding type-err)
                     parse-err
                     (return-val bool-binding))
                 (return-val int-binding)))))
 
-
+; evaluate an arithmetic expression
 (define int-value
   (lambda (expr state)
-    (cond
-      ((number? expr) expr)
-      ((symbol? expr) (m-int expr state))
-      ((list? expr)
+    (cond 
+      ((number? expr) expr) ; return a number
+      ((symbol? expr) (m-int expr state)) ; return a variable representing a number
+      ((list? expr) ; evaluate an operation
        (let ((op (operator expr)))
          (cond
            ((eq? op '+)
@@ -228,15 +228,14 @@
            (else type-err))))
       (else type-err))))
   
-; condition 	<condition> ::= true | false | <name> | <condition> && <condition> | <condition> || <condition> | !<condition> | <int value> < <int value> | <int value> <= <int value> | <int value> > <int value> | <int value> >= <int value> | <expression> == <expression> | <expression> != <expression> 
-; (&& condition condition)
+; evaluate a boolean condition
 (define condition
   (lambda (expr state)
     (cond
-      ((boolean? expr) expr)
-      ((symbol? expr) (m-bool expr state))
+      ((boolean? expr) expr) ; return a boolean
+      ((symbol? expr) (m-bool expr state)) ; return a variable representing a boolean
       ((list? expr)
-       (let ((op (operator expr))) ; Checks for compound conditions
+       (let (op (operator expr)) ; evaluate a condition
              (cond
                ((eq? op '!) (not (condition (operand1 expr) state)))
                ((eq? op '&&)  (and (condition (operand1 expr) state) (condition (operand2 expr) state)))
@@ -248,27 +247,3 @@
                ((eq? op '>=) (>= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
                ((eq? op '<=) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))))))))
        
-
-;; what
-; statement list 	<statementlist> ::= <statement> <statementlist> | nothing
-; (statement1 statement2 ...)
-; statement 	<statement> ::= <declare> | <assign> | <return> | <if> | <while>
-
-;; nontrivial
-; variable declaration 	<declare> ::= var <name>; | var <assign>;
-; (var variable optional-value)
-; assignment 	<assign> ::=  <name> = <expresson>;
-; (= variable expression)
-; return 	<return> ::= return <expression>;
-; (return expression)
-
-;; hard
-; if statement 	<if> ::= if (<condition>) <statement> | if (<condition>) <statement> else <statement>
-; (if condition then-statement optional-else-statement)
-; while statement 	<while> ::= while (<condition>) <statement>
-; (while condition body-statement)
-
-;; ez
-; expression 	<expression> ::= <condition> | <int value>
-; condition 	<condition> ::= true | false | <name> | <condition> && <condition> | <condition> || <condition> | !<condition> | <int value> < <int value> | <int value> <= <int value> | <int value> > <int value> | <int value> >= <int value> | <expression> == <expression> | <expression> != <expression> 
-; (&& condition condition)
