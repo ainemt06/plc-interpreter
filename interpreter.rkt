@@ -24,6 +24,7 @@
 (define operator car)
 (define operand1 cadr)
 (define operand2 caddr)
+(define operand3 cadddr)
 
 (define initial-state (cons '() '()))
 (define acc 0)
@@ -40,12 +41,6 @@
 ;;;; ---------------------------------------------------------
 ;;;; LIST MANIPULATION HELPERS
 ;;;; ---------------------------------------------------------
-
-(define len
-(lambda (lis acc)
-(if (null? lis) 
-    acc
-    (len (cdr lis) (+ acc 1)))))
 
 (define return-pos-of-item
     (lambda (item lis acc)
@@ -107,14 +102,11 @@
                   atom))))
 
 
-;(define m-state
-;    (lambda (construct state)
-    ; insert giant cond of everything we can handle atm
-;    ))
 ; (define m-state
-;     (lambda (construct state)
-;     ; insert giant cond of everything we can handle atm
+;     (lambda (expr state)
+
 ;     ))
+
 
 ;;;; ---------------------------------------------------------
 ;;;; BINDING OPERATIONS
@@ -155,12 +147,14 @@
     (lambda (expr state)
     (let ([op (operator expr)])
         (cond
-         ;   ((eq? op 'if) (if-statement expr state))
+            ((eq? op 'if) (if-statement expr state))
           ;  ((eq? op 'while) (while expr state))
             ((eq? op 'var) (declare expr state))
             ((eq? op '=) (assign expr state))
             ((eq? op 'return) (return expr state))
             (else type-err)))))
+
+
 
 (define declare
     (lambda (expr state)
