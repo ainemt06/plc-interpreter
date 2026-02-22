@@ -1,18 +1,11 @@
 #lang racket
 
+
 ;;;; =======================================================================
 ;;;; Aine Thomas (amt267) Daniel Borhegyi (dmb236)
 ;;;; =======================================================================
 
-(require "simpleParser.rkt")
-
-
-;; Possible steps:
-; 1. Write M_state, M_bool, M_int, m_name
-; 2. Write AddBinding, LookupBinding, RemoveBinding
-;    2b. go back and make error messages more detailed
-; 3. Do denotational semantics for anything we haven't done
-; 4. Implement with the mappings/bindings we've done
+;(require "simpleParser.rkt")
 
 ;;;; ---------------------------------------------------------
 ;;;; CONSTANTS/ERRORS/SIMPLE ABSTRACTIONS
@@ -36,7 +29,14 @@
 (define (type-err) (error 'type "Parameter type mismatch"))
 (define (missing-err) (error 'missing "Var not found in state"))
 (define (unbound-err) (error 'unbound "List position out of bounds"))
+(define (redefine-err) (error) 'redefine "Attempted to redefine a variable")
 (define (parse-err) (error 'parse "Parsing error"))
+
+(define parse-bool
+  (lambda (bool)
+    (if bool
+      'true
+      'false)))
 
 ;;;; ---------------------------------------------------------
 ;;;; LIST MANIPULATION HELPERS
@@ -133,8 +133,8 @@
 
 ; parse a file, then interpret it with the initial state
 (define interpret
-    (lambda (filename)
-        (statement-list (parser filename) initial-state)))
+   (lambda (filename)
+     (statement-list (parser filename) initial-state)))
 
 ; recurse through a list of statements and update the state with each one
 (define statement-list
@@ -158,8 +158,8 @@
 
 ; declare and optionally initialize a variable
 (define declare
-    (lambda (expr state)
-     (if (= (length expr) 2)
+    (lambda (expr state) 
+       (if (= (length expr) 2)
          (add-binding (operand1 expr) 0 state) ; unassigned variables default to 0
          (add-binding (operand1 expr) (expression (operand2 expr) state) state))))
 
@@ -175,7 +175,10 @@
 ; return/print the value of this statement
 (define return 
     (lambda (expr state)
-        (expression (operand1 expr) state)))
+       (let ([val (expression (operand1 expr) state)])
+         (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
+             (parse-bool val)
+             val))))
 
 ; evaluate one of two statements based on a condition
 ;check this works when there is no else
@@ -189,21 +192,13 @@
               state))))) 
 
 
-; while statement	<while> ::= while (<condition>) <statement>
-; (while condition body-statement)
-; untested, I'll test sometime tomorrow, good night <3
-; (define while-statement
-;     (lambda (expr state)
-;         (let ([condition-result (condition (operand1 expr) state)]
-;               [body-statement (statement-list ((statement (operand2 expr) state) (statement ('while expr state) state)))]
-;             (if condition-result
-;                 body-statement)))))
-
+; while a condition is true, iterate through a code block
 (define while
-    (lambda (expr state)
-      (if (condition (operand1 expr) state)
-        (while expr (statement-list (operand2 expr) state))
-        state)))
+  (lambda (expr state)
+    (if (condition (operand1 expr) state) ; check the condition
+        (let ([new-state (statement-list (list (operand2 expr)) state)]) ; run body of the statement
+         (while expr new-state)) ; recursively iterate through the body again
+        state))) ; otherwise return the state
 
 
 ; evaluate a statement
@@ -263,5 +258,5 @@
                ((eq? op '<) (< (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
                ((eq? op '>) (> (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
                ((eq? op '>=) (>= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-               ((eq? op '<=) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))))))))
-       
+               ((eq? op '<=) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+               (else type-err)))))))
