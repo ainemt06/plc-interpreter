@@ -181,12 +181,23 @@
 ;check this works when there is no else
 (define if-statement
     (lambda (expr state)
-        (let ([condition-result (condition (operand1 expr) state)]) ; evaluate the condition
-            (if (condition-result)
-                (statement (operand2 expr) state) ; then statement
+        (let ([condition-result (condition (operand1 expr) state)] 
+              [then-statement (statement (operand2 expr) state)]
+              [else-statement (statement (operand3 expr) state)]) ; evaluate the condition
+            (if condition-result
+                then-statement ; then statement
                 (if (= (length expr) 3)
-                  state
-                  (statement (operand3 expr) state)))))) ; else statement
+                    else-statement))))) ; else statement
+
+; while statement	<while> ::= while (<condition>) <statement>
+; (while condition body-statement)
+; untested, I'll test sometime tomorrow, good night <3
+(define while-statement
+    (lambda (expr state)
+        (let ([condition-result (condition (operand1 expr) state)]
+              [body-statement (statement-list ((statement (operand2 expr) state) (statement ('while expr state) state)))]
+            (if condition-result
+                body-statement)))))
 
 ; evaluate a statement
 (define expression
