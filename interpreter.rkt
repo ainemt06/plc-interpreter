@@ -1,18 +1,11 @@
 #lang racket
 
+
 ;;;; =======================================================================
 ;;;; Aine Thomas (amt267) Daniel Borhegyi (dmb236)
 ;;;; =======================================================================
 
 (require "simpleParser.rkt")
-
-
-;; Possible steps:
-; 1. Write M_state, M_bool, M_int, m_name
-; 2. Write AddBinding, LookupBinding, RemoveBinding
-;    2b. go back and make error messages more detailed
-; 3. Do denotational semantics for anything we haven't done
-; 4. Implement with the mappings/bindings we've done
 
 ;;;; ---------------------------------------------------------
 ;;;; CONSTANTS/ERRORS/SIMPLE ABSTRACTIONS
@@ -36,7 +29,14 @@
 (define (type-err) (error 'type "Parameter type mismatch"))
 (define (missing-err) (error 'missing "Var not found in state"))
 (define (unbound-err) (error 'unbound "List position out of bounds"))
+(define (redefine-err) (error) 'redefine "Attempted to redefine a variable")
 (define (parse-err) (error 'parse "Parsing error"))
+
+(define parse-bool
+  (lambda (bool)
+    (if bool
+      'true
+      'false)))
 
 ;;;; ---------------------------------------------------------
 ;;;; LIST MANIPULATION HELPERS
@@ -132,9 +132,6 @@
 ;;;; ---------------------------------------------------------
 
 ; parse a file, then interpret it with the initial state
-(define interpret
-    (lambda (filename)
-        (statement-list (parser filename) initial-state)))
 
 ; recurse through a list of statements and update the state with each one
 (define statement-list
@@ -158,8 +155,8 @@
 
 ; declare and optionally initialize a variable
 (define declare
-    (lambda (expr state)
-     (if (= (length expr) 2)
+    (lambda (expr state) 
+       (if (= (length expr) 2)
          (add-binding (operand1 expr) 0 state) ; unassigned variables default to 0
          (add-binding (operand1 expr) (expression (operand2 expr) state) state))))
 
@@ -194,15 +191,18 @@
 ; untested, I'll test sometime tomorrow, good night <3
 ; (define while-statement
 ;     (lambda (expr state)
-;         (let ([condition-result (condition (operand1 expr) state)]
-;               [body-statement (statement-list ((statement (operand2 expr) state) (statement ('while expr state) state)))]
+;         (let ([condition-result (condition (operand1 expr) state)])
 ;             (if condition-result
-;                 body-statement)))))
+                
+;                 ; (newline)
+;                 ; (statement-list (statement (operand2 expr) state) (statement (while expr state) state))
+;                 state))))
 
 (define while
-    (lambda (expr state)
-      (if (condition (operand1 expr) state)
-        (while expr (statement-list (operand2 expr) state))
+  (lambda (expr state)
+    (if (condition (operand1 expr) state)
+        (let ([new-state (statement-list (list (operand2 expr)) state)])
+         (while expr new-state))
         state)))
 
 
@@ -250,7 +250,7 @@
 (define condition
   (lambda (expr state)
     (cond
-      ((boolean? expr) expr) ; return a boolean
+      ((boolean? expr) (parse-bool expr)) ; return a boolean
       ((symbol? expr) (m-bool expr state)) ; return a variable representing a boolean
       ((list? expr)
        (let ([op (operator expr)]) ; evaluate a condition
@@ -263,5 +263,5 @@
                ((eq? op '<) (< (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
                ((eq? op '>) (> (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
                ((eq? op '>=) (>= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-               ((eq? op '<=) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))))))))
-       
+               ((eq? op '<=) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+               (else type-err)))))))
