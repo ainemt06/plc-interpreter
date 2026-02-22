@@ -149,7 +149,7 @@
     (let ([op (operator expr)])
         (cond
             ((eq? op 'if) (if-statement expr state))
-          ;  ((eq? op 'while) (while expr state))
+            ((eq? op 'while) (while expr state))
             ((eq? op 'var) (declare expr state))
             ((eq? op '=) (assign expr state))
             ((eq? op 'return) (return expr state))
@@ -180,24 +180,31 @@
 ; evaluate one of two statements based on a condition
 ;check this works when there is no else
 (define if-statement
-    (lambda (expr state)
-        (let ([condition-result (condition (operand1 expr) state)] 
-              [then-statement (statement (operand2 expr) state)]
-              [else-statement (statement (operand3 expr) state)]) ; evaluate the condition
-            (if condition-result
-                then-statement ; then statement
-                (if (= (length expr) 3)
-                    else-statement))))) ; else statement
+  (lambda (expr state)
+    (let ([condition-result (condition (operand1 expr) state)])
+      (if condition-result
+          (statement (operand2 expr) state) ; then branch
+          (if (= (length expr) 3)
+              (statement (operand3 expr) state) ; else branch
+              state))))) 
+
 
 ; while statement	<while> ::= while (<condition>) <statement>
 ; (while condition body-statement)
 ; untested, I'll test sometime tomorrow, good night <3
-(define while-statement
+; (define while-statement
+;     (lambda (expr state)
+;         (let ([condition-result (condition (operand1 expr) state)]
+;               [body-statement (statement-list ((statement (operand2 expr) state) (statement ('while expr state) state)))]
+;             (if condition-result
+;                 body-statement)))))
+
+(define while
     (lambda (expr state)
-        (let ([condition-result (condition (operand1 expr) state)]
-              [body-statement (statement-list ((statement (operand2 expr) state) (statement ('while expr state) state)))]
-            (if condition-result
-                body-statement)))))
+      (if (condition (operand1 expr) state)
+        (while expr (statement-list (operand2 expr) state))
+        state)))
+
 
 ; evaluate a statement
 (define expression
@@ -246,7 +253,7 @@
       ((boolean? expr) expr) ; return a boolean
       ((symbol? expr) (m-bool expr state)) ; return a variable representing a boolean
       ((list? expr)
-       (let (op (operator expr)) ; evaluate a condition
+       (let ([op (operator expr)]) ; evaluate a condition
              (cond
                ((eq? op '!) (not (condition (operand1 expr) state)))
                ((eq? op '&&)  (and (condition (operand1 expr) state) (condition (operand2 expr) state)))
