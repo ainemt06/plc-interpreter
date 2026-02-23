@@ -5,7 +5,7 @@
 ;;;; Aine Thomas (amt267) Daniel Borhegyi (dmb236)
 ;;;; =======================================================================
 
-;(require "simpleParser.rkt")
+(require "simpleParser.rkt")
 
 ;;;; ---------------------------------------------------------
 ;;;; CONSTANTS/ERRORS/SIMPLE ABSTRACTIONS
@@ -181,7 +181,6 @@
              val))))
 
 ; evaluate one of two statements based on a condition
-;check this works when there is no else
 (define if-statement
   (lambda (expr state)
     (let ([condition-result (condition (operand1 expr) state)])
@@ -245,7 +244,7 @@
 (define condition
   (lambda (expr state)
     (cond
-      ((boolean? expr) expr) ; return a boolean
+      ((boolean? expr) (parse-bool expr)) ; return a boolean
       ((symbol? expr) (m-bool expr state)) ; return a variable representing a boolean
       ((list? expr)
        (let ([op (operator expr)]) ; evaluate a condition
