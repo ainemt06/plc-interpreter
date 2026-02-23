@@ -89,12 +89,14 @@
 ; evaluates the boolean value of a mapping
 (define m-bool
     (lambda (atom state)
-        (if (boolean? atom)
-            atom ; return a literal boolean
-            (let ([val (value-of-binding (lookup-binding atom state))])
+        (cond
+          ((boolean? atom) atom)
+          ((eq? 'false atom) #f)
+          ((eq? 'true atom) #t) ; return a literal boolean
+          (else (let ([val (value-of-binding (lookup-binding atom state))])
                  (if (boolean? val) ; check if this var is mapped to a boolean
                      val
-                     type-err)))))   
+                     type-err))))))   
 
 ; check if this symbol is mapped to a value
 (define m-name
@@ -133,8 +135,8 @@
 
 ; parse a file, then interpret it with the initial state
 (define interpret
-   (lambda (filename)
-     (statement-list (parser filename) initial-state)))
+  (lambda (filename)
+    (statement-list (parser filename) initial-state)))
 
 ; recurse through a list of statements and update the state with each one
 (define statement-list
