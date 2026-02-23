@@ -5,7 +5,7 @@
 ;;;; Aine Thomas (amt267) Daniel Borhegyi (dmb236)
 ;;;; =======================================================================
 
-;(require "simpleParser.rkt")
+(require "simpleParser.rkt")
 
 ;;;; ---------------------------------------------------------
 ;;;; CONSTANTS/ERRORS/SIMPLE ABSTRACTIONS
@@ -245,7 +245,7 @@
 (define condition
   (lambda (expr state)
     (cond
-      ((boolean? expr) expr) ; return a boolean
+      ((boolean? expr) (parse-bool expr)) ; return a boolean
       ((symbol? expr) (m-bool expr state)) ; return a variable representing a boolean
       ((list? expr)
        (let ([op (operator expr)]) ; evaluate a condition
