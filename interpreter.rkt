@@ -1,11 +1,19 @@
 #lang racket
+(require "simpleParser.rkt")
 
 
 ;;;; =======================================================================
 ;;;; Aine Thomas (amt267) Daniel Borhegyi (dmb236)
 ;;;; =======================================================================
 
-(require "simpleParser.rkt")
+;;;; ---------------------------------------------------------
+;;;; INTERPRET
+;;;; ---------------------------------------------------------
+
+; parse a file, then interpret it with the initial state
+(define interpret
+  (lambda (filename)
+    (statement-list (parser filename) initial-state)))
 
 ;;;; ---------------------------------------------------------
 ;;;; CONSTANTS/ERRORS/SIMPLE ABSTRACTIONS
@@ -32,6 +40,7 @@
 (define (redefine-err) (error) 'redefine "Attempted to redefine a variable")
 (define (parse-err) (error 'parse "Parsing error"))
 
+; turn #t & #f into 'true and 'false
 (define parse-bool
   (lambda (bool)
     (if bool
@@ -39,104 +48,8 @@
       'false)))
 
 ;;;; ---------------------------------------------------------
-;;;; LIST MANIPULATION HELPERS
+;;;; DENOTATIONAL SEMANTICS/M_STATE FUNCTIONS
 ;;;; ---------------------------------------------------------
-
-; return the index of an item in a list
-(define return-pos-of-item
-    (lambda (item lis acc)
-        (cond
-            ((null? item) type-err)
-            ((null? lis) missing-err)
-            ((eq? item (car lis)) acc)
-            (else (return-pos-of-item item (cdr lis) (+ acc 1))))))
-
-; return the item at a given index in a list
-(define return-item-at-pos
-    (lambda (pos lis)
-        (cond
-            ((not (number? pos)) type-err)
-            ((null? lis) unbound-err)
-            ((zero? pos) (car lis))
-            (else (return-item-at-pos (- pos 1) (cdr lis))))))
-
-; remove the item at a given index in a list (return the list)
-(define remove-item-at-pos
-  (lambda (pos lis)
-    (cond
-      ((not (number? pos)) type-err)
-      ((null? lis) unbound-err)
-      ((zero? pos) (cdr lis))
-      (else
-        (cons (car lis)
-              (remove-item-at-pos (- pos 1) (cdr lis)))))))
-
-;;;; ---------------------------------------------------------
-;;;; MAPPINGS
-;;;; ---------------------------------------------------------
-
-
-; evaluates the integer value of a mapping
-(define m-int
-    (lambda (atom state)
-        (if (number? atom) 
-            atom ; return a literal number
-            (let ([val (value-of-binding (lookup-binding atom state))]) 
-                  (if (number? val) ; check if this var is mapped to an int
-                      val 
-                      type-err)))))   
-
-; evaluates the boolean value of a mapping
-(define m-bool
-    (lambda (atom state)
-        (cond
-          ((boolean? atom) atom)
-          ((eq? 'false atom) #f)
-          ((eq? 'true atom) #t) ; return a literal boolean
-          (else (let ([val (value-of-binding (lookup-binding atom state))])
-                 (if (boolean? val) ; check if this var is mapped to a boolean
-                     val
-                     type-err))))))   
-
-; check if this symbol is mapped to a value
-(define m-name
-    (lambda (atom state)
-        (let ([n (lookup-binding atom state)])
-              (if (or (eq? n type-err) (eq? n missing-err) (eq? n unbound-err)) ; check if it returns an error
-                  n
-                  atom))))
-
-;;;; ---------------------------------------------------------
-;;;; BINDING OPERATIONS
-;;;; ---------------------------------------------------------
-
-;; in newest -> oldest order
-(define add-binding 
-    (lambda (name value state)
-        (return-state (cons name (get-state-names state))
-                      (cons value (get-state-values state)))))
-
-(define lookup-binding
-    (lambda (name state)
-        (let* ([index (return-pos-of-item name (get-state-names state) first-index)]
-               [value (return-item-at-pos index (get-state-values state))])
-               (cons value index))))
-
-(define remove-binding
-    (lambda (name state)
-        (let* ([binding (lookup-binding name state)]
-               [index (index-of-binding binding)])
-             (return-state (remove-item-at-pos index (get-state-names state))
-                           (remove-item-at-pos index (get-state-values state))))))
-
-;;;; ---------------------------------------------------------
-;;;; DENOTATIONAL SEMANTICS
-;;;; ---------------------------------------------------------
-
-; parse a file, then interpret it with the initial state
-(define interpret
-  (lambda (filename)
-    (statement-list (parser filename) initial-state)))
 
 ; recurse through a list of statements and update the state with each one
 (define statement-list
@@ -161,9 +74,11 @@
 ; declare and optionally initialize a variable
 (define declare
     (lambda (expr state) 
-       (if (= (length expr) 2)
-         (add-binding (operand1 expr) 0 state) ; unassigned variables default to 0
-         (add-binding (operand1 expr) (expression (operand2 expr) state) state))))
+        (if (not (eq? (lookup-binding (operand1 expr) state) missing-err)) ;prevent variables from being redeclared
+            redefine-err
+            (if (= (length expr) 2)
+              (add-binding (operand1 expr) '() state) ; unassigned variables default to the empty list
+              (add-binding (operand1 expr) (expression (operand2 expr) state) state)))))
 
 ;; set a variable to a value
 (define assign 
@@ -188,10 +103,9 @@
     (let ([condition-result (condition (operand1 expr) state)])
       (if condition-result
           (statement (operand2 expr) state) ; then branch
-          (if (= (length expr) 3)
+          (if (= (length expr) 4)
               (statement (operand3 expr) state) ; else branch
               state))))) 
-
 
 ; while a condition is true, iterate through a code block
 (define while
@@ -261,3 +175,97 @@
                ((eq? op '>=) (>= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
                ((eq? op '<=) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
                (else type-err)))))))
+
+;;;; ---------------------------------------------------------
+;;;; MAPPINGS
+;;;; ---------------------------------------------------------
+
+; evaluates the integer value of a mapping
+(define m-int
+    (lambda (atom state)
+        (if (number? atom) 
+            atom ; return a literal number
+            (let ([val (value-of-binding (lookup-binding atom state))]) 
+                  (if (number? val) ; check if this var is mapped to an int
+                      val 
+                      type-err)))))   
+
+; evaluates the boolean value of a mapping
+(define m-bool
+    (lambda (atom state)
+        (cond
+          ((boolean? atom) atom)
+          ((eq? 'false atom) #f)
+          ((eq? 'true atom) #t) ; return a literal boolean
+          (else (let ([val (value-of-binding (lookup-binding atom state))])
+                 (if (boolean? val) ; check if this var is mapped to a boolean
+                     val
+                     type-err))))))   
+
+; check if this symbol is mapped to a value
+(define m-name
+    (lambda (atom state)
+        (let ([n (lookup-binding atom state)])
+              (if (or (eq? n type-err) (eq? n missing-err) (eq? n unbound-err)) ; check if it returns an error
+                  n
+                  atom))))
+
+;;;; ---------------------------------------------------------
+;;;; BINDING OPERATIONS
+;;;; ---------------------------------------------------------
+
+;; add a binding to the state in newest -> oldest order
+(define add-binding 
+    (lambda (name value state)
+        (return-state (cons name (get-state-names state))
+                      (cons value (get-state-values state)))))
+
+; find the value of a binding by name
+(define lookup-binding
+    (lambda (name state)
+        (let* ([index (return-pos-of-item name (get-state-names state) first-index)]
+               [value (return-item-at-pos index (get-state-values state))])
+               (if (eq? missing-err index)
+                 missing-err
+                (cons value index)))))
+
+; delete a binding
+(define remove-binding
+    (lambda (name state)
+        (let* ([binding (lookup-binding name state)]
+               [index (index-of-binding binding)])
+             (return-state (remove-item-at-pos index (get-state-names state))
+                           (remove-item-at-pos index (get-state-values state))))))
+
+;;;; ---------------------------------------------------------
+;;;; LIST MANIPULATION HELPERS
+;;;; ---------------------------------------------------------
+
+; return the index of an item in a list
+(define return-pos-of-item
+    (lambda (item lis acc)
+        (cond
+            ((null? item) type-err)
+            ((null? lis) missing-err)
+            ((eq? item (car lis)) acc)
+            (else (return-pos-of-item item (cdr lis) (+ acc 1))))))
+
+; return the item at a given index in a list
+(define return-item-at-pos
+    (lambda (pos lis)
+        (cond
+            ((not (number? pos)) type-err)
+            ((null? lis) unbound-err)
+            ((zero? pos) (car lis))
+            (else (return-item-at-pos (- pos 1) (cdr lis))))))
+
+; remove the item at a given index in a list (return the list)
+(define remove-item-at-pos
+  (lambda (pos lis)
+    (cond
+      ((not (number? pos)) type-err)
+      ((null? lis) unbound-err)
+      ((zero? pos) (cdr lis))
+      (else
+        (cons (car lis)
+              (remove-item-at-pos (- pos 1) (cdr lis)))))))
