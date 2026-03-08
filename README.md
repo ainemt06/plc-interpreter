@@ -1,2 +1,2 @@
-# plc-simple-interpreter
-Solution for CWRU CSDS345 project 1
+# plc-interpreter
+Solution for CWRU CSDS345 projects
