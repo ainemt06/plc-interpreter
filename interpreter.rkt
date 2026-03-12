@@ -27,10 +27,16 @@
 (define operand2 caddr)
 (define operand3 cadddr)
 
-(define initial-state (cons '() '()))
+(define initial-state (list (cons '() '())))
 (define acc 0)
-(define get-state-names (lambda (state) (car state)))
-(define get-state-values (lambda (state) (cdr state)))
+(define get-state-names (lambda (state) (car (car state))))
+(define get-state-values (lambda (state) (cdr (car state))))
+(define add-state-layer 
+  (lambda (state) 
+    (let ([names (get-state-names state)]
+           [vals (get-state-values state)])
+           (cons (return-state names vals) state))))
+(define remove-state-layer (lambda (state) (cdr state)))
 (define return-state (lambda (names vals) (cons names vals)))
 (define return-val (lambda (v) v))
 
