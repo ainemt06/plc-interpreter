@@ -13,7 +13,7 @@
 ; parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename)
-    (statement-list (parser filename) initial-state)))
+    (statement-list (parser filename) initial-state (lambda (value state) value))))
 
 ;;;; ---------------------------------------------------------
 ;;;; CONSTANTS/ERRORS/SIMPLE ABSTRACTIONS
@@ -57,55 +57,58 @@
 ;;;; DENOTATIONAL SEMANTICS/M_STATE FUNCTIONS
 ;;;; ---------------------------------------------------------
 
+; set up return through block and try and whatever
+
+
 ; recurse through a list of statements and update the state with each one
 (define statement-list
-    (lambda (lis state)
+    (lambda (lis state return)
         (if (null? lis) 
             state ; return the final state
-            (statement-list (cdr lis) (statement (car lis) state)))))
+            (statement (car lis) state (lambda (new-state) (statement-list (cdr lis) new-state)) return))))
 
 ; parse out the type of a statement and evaluate it (basically our M_state)
 (define statement
-    (lambda (expr state)
+    (lambda (expr state next return)
     (let ([op (operator expr)])
         (cond
-            ((eq? op 'if) (if-statement expr state))
-            ((eq? op 'while) (while expr state))
-            ((eq? op 'var) (declare expr state))
-            ((eq? op '=) (assign expr state))
-            ((eq? op 'return) (return expr state))
+            ((eq? op 'if) (if-statement expr state next))
+            ((eq? op 'while) (while expr state next))
+            ((eq? op 'var) (declare expr state next))
+            ((eq? op '=) (assign expr state next))
+            ((eq? op 'return) (return-statement expr state next return))
             (else type-err)))))
 
 
 ; declare and optionally initialize a variable
 (define declare
-    (lambda (expr state) 
+    (lambda (expr state next) 
         (if (not (eq? (lookup-binding (operand1 expr) state) missing-err)) ;prevent variables from being redeclared
             redefine-err
             (if (= (length expr) 2)
-              (add-binding (operand1 expr) '() state) ; unassigned variables default to the empty list
-              (add-binding (operand1 expr) (expression (operand2 expr) state) state)))))
+              (next (add-binding (operand1 expr) '() state)) ; unassigned variables default to the empty list
+              (next (add-binding (operand1 expr) (expression (operand2 expr) state) state))))))
 
 ;; set a variable to a value
 (define assign 
-    (lambda (expr state)
+    (lambda (expr state next)
       (if (eq? (lookup-binding (operand1 expr) state) missing-err)  ; if this variable has not been bound to anything, throw an error
           missing-err 
           (let* ([state1 (remove-binding (operand1 expr) state)] ; remove the old binding and add the new one
                  [state2 (add-binding (operand1 expr) (expression (operand2 expr) state) state1)])
-                 state2))))
+                 (next state2)))))
 
 ; return/print the value of this statement
-(define return 
-    (lambda (expr state)
+(define return-statement
+    (lambda (expr state next return)
        (let ([val (expression (operand1 expr) state)])
          (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
-             (parse-bool val)
-             val))))
+             (return (parse-bool val))
+             (return val)))))
 
 ; evaluate one of two statements based on a condition
 (define if-statement
-  (lambda (expr state)
+  (lambda (expr state next)
     (let ([condition-result (condition (operand1 expr) state)])
       (if condition-result
           (statement (operand2 expr) state) ; then branch
@@ -115,11 +118,11 @@
 
 ; while a condition is true, iterate through a code block
 (define while
-  (lambda (expr state)
+  (lambda (expr state next)
     (if (condition (operand1 expr) state) ; check the condition
         (let ([new-state (statement-list (list (operand2 expr)) state)]) ; run body of the statement
          (while expr new-state)) ; recursively iterate through the body again
-        state))) ; otherwise return the state
+        (next state)))) ; otherwise return the state
 
 
 ; evaluate a statement
