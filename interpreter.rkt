@@ -29,15 +29,11 @@
 
 (define initial-state (list (cons '() '())))
 (define acc 0)
-(define get-state-names (lambda (state) (car (car state))))
-(define get-state-values (lambda (state) (cdr (car state))))
-(define add-state-layer 
-  (lambda (state) 
-    (let ([names (get-state-names state)]
-           [vals (get-state-values state)])
-           (cons (return-state names vals) state))))
+(define get-state-names (lambda (state) (car state)))
+(define get-state-values (lambda (state) (cdr state)))
+(define add-state-layer (lambda (state) (cons '() state)))
 (define remove-state-layer (lambda (state) (cdr state)))
-(define return-state (lambda (names vals) (cons names vals)))
+(define return-state-layer (lambda (names vals) (cons names vals)))
 (define return-val (lambda (v) v))
 
 (define (type-err) (error 'type "Parameter type mismatch"))
@@ -45,6 +41,7 @@
 (define (unbound-err) (error 'unbound "List position out of bounds"))
 (define (redefine-err) (error) 'redefine "Attempted to redefine a variable")
 (define (parse-err) (error 'parse "Parsing error"))
+(define (loop-err) (error 'loop "Break or continue used outside of loop"))
 
 ; turn #t & #f into 'true and 'false
 (define parse-bool
@@ -64,7 +61,7 @@
 (define statement-list
     (lambda (lis state return)
         (if (null? lis) 
-            state ; return the final state
+            (return state) ; return the final state
             (statement (car lis) state (lambda (new-state) (statement-list (cdr lis) new-state)) return))))
 
 ; parse out the type of a statement and evaluate it (basically our M_state)
@@ -90,13 +87,9 @@
               (next (add-binding (operand1 expr) (expression (operand2 expr) state) state))))))
 
 ;; set a variable to a value
-(define assign 
-    (lambda (expr state next)
-      (if (eq? (lookup-binding (operand1 expr) state) missing-err)  ; if this variable has not been bound to anything, throw an error
-          missing-err 
-          (let* ([state1 (remove-binding (operand1 expr) state)] ; remove the old binding and add the new one
-                 [state2 (add-binding (operand1 expr) (expression (operand2 expr) state) state1)])
-                 (next state2)))))
+(define assign
+  (lambda (expr state next)
+    (next (update-binding (operand1 expr) (expression (operand2 expr) state) state))))
 
 ; return/print the value of this statement
 (define return-statement
@@ -111,10 +104,10 @@
   (lambda (expr state next)
     (let ([condition-result (condition (operand1 expr) state)])
       (if condition-result
-          (statement (operand2 expr) state) ; then branch
+          (next (statement (operand2 expr) state)) ; then branch
           (if (= (length expr) 4)
-              (statement (operand3 expr) state) ; else branch
-              state))))) 
+              (next (statement (operand3 expr) state)) ; else branch
+              (next state)))))) 
 
 ; while a condition is true, iterate through a code block
 (define while
@@ -224,58 +217,114 @@
 ;;;; BINDING OPERATIONS
 ;;;; ---------------------------------------------------------
 
-;; add a binding to the state in newest -> oldest order
-(define add-binding 
-    (lambda (name value state)
-        (return-state (cons name (get-state-names state))
-                      (cons value (get-state-values state)))))
+;; add a binding to a layer of the state
+(define add-binding
+  (lambda (name value state)
+    (let* ([names (cons (cons name (car (get-state-names state))) (cdr (get-state-names state)))]
+           [vals (cons (cons value (car (get-state-values state))) (cdr (get-state-names state)))]))))
 
 ; find the value of a binding by name
 (define lookup-binding
     (lambda (name state)
-        (let* ([index (return-pos-of-item name (get-state-names state) first-index)]
+        (let* ([index (return-pos-of-item name (get-state-names state))]
                [value (return-item-at-pos index (get-state-values state))])
                (if (eq? missing-err index)
                  missing-err
                 (cons value index)))))
+
+(define update-binding
+  (lambda (name newval state)
+    (let ([index (return-pos-of-item name (get-state-names state))])
+         (replace-item-at-pos index newval (get-state-values state)))))
 
 ; delete a binding
 (define remove-binding
     (lambda (name state)
         (let* ([binding (lookup-binding name state)]
                [index (index-of-binding binding)])
-             (return-state (remove-item-at-pos index (get-state-names state))
+             (return-state-layer (remove-item-at-pos index (get-state-names state))
                            (remove-item-at-pos index (get-state-values state))))))
 
 ;;;; ---------------------------------------------------------
 ;;;; LIST MANIPULATION HELPERS
 ;;;; ---------------------------------------------------------
 
-; return the index of an item in a list
+(define return-pos-of-item-cps
+  (lambda (item lis return)
+    (cond
+      ((null? item) type-err)
+      ((null? lis) missing-err)
+      ((eq? item (car lis)) (return 0))
+      ((list? (car lis)) (return-pos-of-item-cps item (car lis) 
+                           (lambda (v1) (return-pos-of-item-cps item (cdr lis) 
+                           (lambda (v2) (return (+ v1 v2)))))))
+      (else (return-pos-of-item-cps item (cdr lis) (lambda (v) (return (+ v 1))))))))
+
 (define return-pos-of-item
-    (lambda (item lis acc)
-        (cond
-            ((null? item) type-err)
-            ((null? lis) missing-err)
-            ((eq? item (car lis)) acc)
-            (else (return-pos-of-item item (cdr lis) (+ acc 1))))))
+  (lambda (item lis)
+    (return-pos-of-item-cps item lis (lambda (v) v))))
 
-; return the item at a given index in a list
-(define return-item-at-pos
-    (lambda (pos lis)
-        (cond
-            ((not (number? pos)) type-err)
-            ((null? lis) unbound-err)
-            ((zero? pos) (car lis))
-            (else (return-item-at-pos (- pos 1) (cdr lis))))))
-
-; remove the item at a given index in a list (return the list)
-(define remove-item-at-pos
-  (lambda (pos lis)
+(define return-item-at-pos-cps
+  (lambda (pos lis return)
     (cond
       ((not (number? pos)) type-err)
-      ((null? lis) unbound-err)
-      ((zero? pos) (cdr lis))
+      ((null? lis) (return #f pos))
+      ((zero? pos) (return (car lis) 0)) 
+      ((list? (car lis))
+       (return-item-at-pos-cps pos (car lis)
+         (lambda (v1 pos1)
+           (if (zero? pos1)
+               (return v1 0)      
+               (return-item-at-pos-cps pos1 (cdr lis) return)))))
       (else
-        (cons (car lis)
-              (remove-item-at-pos (- pos 1) (cdr lis)))))))
+       (return-item-at-pos-cps (- pos 1) (cdr lis) return)))))
+
+(define return-item-at-pos
+  (lambda (pos lis)
+    (return-item-at-pos-cps pos lis (lambda (v pos) v))))
+
+(define remove-item-at-pos-cps
+  (lambda (pos lis return)
+    (cond
+      ((not (number? pos)) type-err)
+      ((null? lis) (return '() pos))          
+      ((zero? pos) (return (cdr lis) 0))     
+      ((list? (car lis))
+       (remove-item-at-pos-cps pos (car lis)
+         (lambda (v1 pos1)
+           (if (zero? pos1)
+               (return (cons v1 (cdr lis)) 0)       
+               (remove-item-at-pos-cps pos1 (cdr lis)   
+                 (lambda (v2 pos2)
+                   (return (cons (car lis) v2) pos2)))))))
+      (else
+       (remove-item-at-pos-cps (- pos 1) (cdr lis)
+         (lambda (v pos)
+           (return (cons (car lis) v) pos)))))))   
+
+(define remove-item-at-pos
+  (lambda (pos lis)
+    (remove-item-at-pos-cps pos lis (lambda (state pos) state))))
+
+(define replace-item-at-pos-cps
+  (lambda (pos item lis return)
+    (cond
+      ((not (number? pos)) type-err)
+      ((null? lis) (return '() pos))          
+      ((zero? pos) (return (cons item (cdr lis)) 0))     
+      ((list? (car lis))
+       (replace-item-at-pos-cps pos item (car lis)
+         (lambda (v1 pos1)
+           (if (zero? pos1)
+               (return (cons v1 (cdr lis)) 0)       
+               (replace-item-at-pos-cps pos1 item (cdr lis)   
+                 (lambda (v2 pos2)
+                   (return (cons (car lis) v2) pos2)))))))
+      (else
+       (replace-item-at-pos-cps (- pos 1) item (cdr lis)
+         (lambda (v pos)
+           (return (cons (car lis) v) pos)))))))   
+
+(define replace-item-at-pos
+  (lambda (pos item lis)
+    (remove-item-at-pos-cps pos item lis (lambda (state pos) state))))
