@@ -33,7 +33,7 @@
 (define get-state-values (lambda (state) (cdr state)))
 (define add-state-layer (lambda (state) (cons '() state)))
 (define remove-state-layer (lambda (state) (cdr state)))
-(define return-state-layer (lambda (names vals) (cons names vals)))
+(define return-state (lambda (names vals) (cons names vals)))
 (define return-val (lambda (v) v))
 
 (define (type-err) (error 'type "Parameter type mismatch"))
@@ -55,6 +55,8 @@
 ;;;; ---------------------------------------------------------
 
 ; set up return through block and try and whatever
+
+
 
 
 ; recurse through a list of statements and update the state with each one
@@ -221,7 +223,8 @@
 (define add-binding
   (lambda (name value state)
     (let* ([names (cons (cons name (car (get-state-names state))) (cdr (get-state-names state)))]
-           [vals (cons (cons value (car (get-state-values state))) (cdr (get-state-names state)))]))))
+           [vals (cons (cons value (car (get-state-values state))) (cdr (get-state-names state)))])
+           (return-state names vals))))
 
 ; find the value of a binding by name
 (define lookup-binding
@@ -242,7 +245,7 @@
     (lambda (name state)
         (let* ([binding (lookup-binding name state)]
                [index (index-of-binding binding)])
-             (return-state-layer (remove-item-at-pos index (get-state-names state))
+              (return-state (remove-item-at-pos index (get-state-names state))
                            (remove-item-at-pos index (get-state-values state))))))
 
 ;;;; ---------------------------------------------------------
