@@ -24,6 +24,7 @@
 (define index-of-binding cdr)
 (define operator car)
 (define operand1 cadr)
+(define block cadr)
 (define operand2 caddr)
 (define operand3 cadddr)
 
@@ -56,7 +57,10 @@
 
 ; set up return through block and try and whatever
 
-
+; brackets
+(define block-of-code
+  (lambda (block state return)
+    (statement-list block (add-state-layer state) return)))
 
 
 ; recurse through a list of statements and update the state with each one
@@ -76,6 +80,7 @@
             ((eq? op 'var) (declare expr state next))
             ((eq? op '=) (assign expr state next))
             ((eq? op 'return) (return-statement expr state next return))
+            ((eq? op 'begin) (block-of-code block state return))
             (else type-err)))))
 
 
