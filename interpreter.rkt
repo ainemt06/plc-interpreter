@@ -59,30 +59,70 @@
 
 ; brackets
 (define block-of-code
-  (lambda (block state return)
-    (statement-list block (add-state-layer state) return)))
+  (lambda (block state next return break continue throw)
+    (statement-list block (add-state-layer state) next return break continue throw)))
 
 
 ; recurse through a list of statements and update the state with each one
 (define statement-list
-    (lambda (lis state return)
+    (lambda (lis state next return break continue throw)
         (if (null? lis) 
             (return state) ; return the final state
-            (statement (car lis) state (lambda (new-state) (statement-list (cdr lis) new-state)) return))))
+            (statement (operator lis) state (lambda (new-state) (statement-list (cdr lis) new-state)) return break continue throw))))
 
 ; parse out the type of a statement and evaluate it (basically our M_state)
 (define statement
-    (lambda (expr state next return)
+    (lambda (expr state next return break continue throw)
     (let ([op (operator expr)])
         (cond
-            ((eq? op 'if) (if-statement expr state next))
-            ((eq? op 'while) (while expr state next))
-            ((eq? op 'var) (declare expr state next))
-            ((eq? op '=) (assign expr state next))
-            ((eq? op 'return) (return-statement expr state next return))
-            ((eq? op 'begin) (block-of-code block state return))
+            ((eq? op 'if) (if-statement expr state next return break continue throw))
+            ((eq? op 'while) (while expr state next return break continue throw))
+            ((eq? op 'var) (declare expr state next return break continue throw))
+            ((eq? op '=) (assign expr state next return break continue throw))
+            ((eq? op 'return) (return-statement expr state next return break continue throw))
+            ((eq? op 'begin) (block-of-code (cdr expr) state next return break continue throw))
+            ((eq? op 'try) (try expr state next return break continue throw))
+            ((eq? op 'throw) (throw-excep expr state next return break continue throw))
             (else type-err)))))
 
+(define try
+  (lambda (expr state next return break continue throw)
+    (let* ([tryblock (operand1 expr)]
+          [catchblock (operand2 expr)]
+          [exceptvar (car (operand1 catchblock))]
+          [finallyblock (operand3 expr)]) 
+          ((next (block-of-code tryblock state newnext newreturn newbreak continue newthrow))))))
+
+(define newnext
+  (lambda (finallyblock s next return break continue throw)
+    (block-of-code finallyblock s next return break continue throw)))
+
+(define newreturn
+  (lambda (finallyblock v s next return break continue throw)
+    (block-of-code finallyblock s next (lambda s2 (return v s2)) break continue throw)))
+
+(define newbreak
+  (lambda (finallyblock s next return break continue throw)
+    (block-of-code finallyblock s break return break continue throw)))
+
+(define newthrow
+  (lambda (catchblock exceptvar finallyblock e s next return break continue throw)
+    (block-of-code catchblock 
+           (add-binding exceptvar e s)
+           (lambda (s2) (block-of-code finallyblock s2 next return break continue throw))
+           (lambda (v s2) (block-of-code finallyblock s2 next (lambda (s3) (return v s3)) break continue throw))
+           (lambda (s2) (block-of-code finallyblock s2 break return break continue throw))
+           continue 
+           (lambda (e2 s2) (block-of-code finallyblock s2 next (lambda (s3) (throw e2 s3)) break continue throw)))))
+
+(define catchthrow
+  (lambda (finallyblock v s next return break continue throw)
+    (block-of-code finallyblock s next (lambda (s2) (return v s2)) break continue throw)))
+
+; throw an expression
+(define throw-excep
+  (lambda (expr state next return break continue throw)
+    (throw (expression (operand1 expr) state) state)))
 
 ; declare and optionally initialize a variable
 (define declare
