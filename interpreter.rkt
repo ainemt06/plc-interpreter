@@ -24,7 +24,7 @@
 (define index-of-binding cdr)
 (define operator car)
 (define operand1 cadr)
-(define block cadr)
+(define block cdr)
 (define operand2 caddr)
 (define operand3 cadddr)
 
@@ -80,7 +80,7 @@
             ((eq? op 'var) (declare expr state next return break continue throw))
             ((eq? op '=) (assign expr state next return break continue throw))
             ((eq? op 'return) (return-statement expr state next return break continue throw))
-            ((eq? op 'begin) (block-of-code (cdr expr) state next return break continue throw))
+            ((eq? op 'begin) (block-of-code (block expr) state next return break continue throw))
             ((eq? op 'try) (try expr state next return break continue throw))
             ((eq? op 'throw) (throw-excep expr state next return break continue throw))
             (else type-err)))))
