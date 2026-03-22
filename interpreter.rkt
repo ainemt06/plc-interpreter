@@ -13,7 +13,8 @@
 ; parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename)
-    (statement-list (parser filename) initial-state (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (value state) value))))
+    (statement-list (parser filename) initial-state (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (value state) value))))
+
 
 
 ;;;; ---------------------------------------------------------
