@@ -13,7 +13,8 @@
 ; parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename)
-    (statement-list (parser filename) initial-state (lambda (value state) value))))
+    (statement-list (parser filename) initial-state (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (value state) value))))
+
 
 ;;;; ---------------------------------------------------------
 ;;;; CONSTANTS/ERRORS/SIMPLE ABSTRACTIONS
@@ -28,13 +29,14 @@
 (define operand2 caddr)
 (define operand3 cadddr)
 
-(define initial-state (list (cons '() '())))
+(define initial-state (list '() '()))
 (define acc 0)
 (define get-state-names (lambda (state) (car state)))
-(define get-state-values (lambda (state) (cdr state)))
-(define add-state-layer (lambda (state) (cons '() state)))
-(define remove-state-layer (lambda (state) (cdr state)))
-(define return-state (lambda (names vals) (cons names vals)))
+(define get-state-values (lambda (state) (cadr state)))
+(define add-state-layer (lambda (state) (return-state (cons '() (get-state-names state)) (cons '() (get-state-values state)))))
+(define remove-state-layer (lambda (state)  (display "removing layer from: ") (display state) (newline)
+                             (return-state (cdr (get-state-names  state)) (cdr (get-state-values state)))))
+(define return-state (lambda (names vals) (list names vals)))
 (define return-val (lambda (v) v))
 
 (define (type-err) (error 'type "Parameter type mismatch"))
@@ -57,18 +59,18 @@
 
 ; set up return through block and try and whatever
 
-; brackets
 (define block-of-code
   (lambda (block state next return break continue throw)
-    (statement-list block (add-state-layer state) next return break continue throw)))
-
+    (statement-list block (add-state-layer state)
+      (lambda (s) (next (remove-state-layer s)))  ; strip the layer before continuing
+      return break continue throw)))
 
 ; recurse through a list of statements and update the state with each one
 (define statement-list
     (lambda (lis state next return break continue throw)
         (if (null? lis) 
-            (return state) ; return the final state
-            (statement (operator lis) state (lambda (new-state) (statement-list (cdr lis) new-state)) return break continue throw))))
+            (next state) ; return the final state
+            (statement (operator lis) state (lambda (new-state) (statement-list (cdr lis) new-state next return break continue throw)) return break continue throw))))
 
 ; parse out the type of a statement and evaluate it (basically our M_state)
 (define statement
@@ -126,7 +128,7 @@
 
 ; declare and optionally initialize a variable
 (define declare
-    (lambda (expr state next) 
+    (lambda (expr state next return break continue throw) 
         (if (not (eq? (lookup-binding (operand1 expr) state) missing-err)) ;prevent variables from being redeclared
             redefine-err
             (if (= (length expr) 2)
@@ -135,12 +137,12 @@
 
 ;; set a variable to a value
 (define assign
-  (lambda (expr state next)
+  (lambda (expr state next return break continue throw)
     (next (update-binding (operand1 expr) (expression (operand2 expr) state) state))))
 
 ; return/print the value of this statement
 (define return-statement
-    (lambda (expr state next return)
+    (lambda (expr state next return break continue throw)
        (let ([val (expression (operand1 expr) state)])
          (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
              (return (parse-bool val))
@@ -148,7 +150,7 @@
 
 ; evaluate one of two statements based on a condition
 (define if-statement
-  (lambda (expr state next)
+  (lambda (expr state next return break continue throw)
     (let ([condition-result (condition (operand1 expr) state)])
       (if condition-result
           (next (statement (operand2 expr) state)) ; then branch
@@ -158,7 +160,7 @@
 
 ; while a condition is true, iterate through a code block
 (define while
-  (lambda (expr state next)
+  (lambda (expr state next return break continue throw)
     (if (condition (operand1 expr) state) ; check the condition
         (let ([new-state (statement-list (list (operand2 expr)) state)]) ; run body of the statement
          (while expr new-state)) ; recursively iterate through the body again
@@ -267,10 +269,16 @@
 ;; add a binding to a layer of the state
 (define add-binding
   (lambda (name value state)
-    (let* ([names (cons (cons name (car (get-state-names state))) (cdr (get-state-names state)))]
-           [vals (cons (cons value (car (get-state-values state))) (cdr (get-state-names state)))])
-           (return-state names vals))))
-
+    (if (null? (get-state-names state))
+        ;; No layers exist yet — create the first one
+        (return-state (list (list name))
+                      (list (list value)))
+        ;; Layers exist — cons into the top layer as before
+        (let* ([names (cons (cons name  (car (get-state-names  state)))
+                            (cdr (get-state-names  state)))]
+               [vals  (cons (cons value (car (get-state-values state)))
+                            (cdr (get-state-values state)))])
+          (return-state names vals)))))
 ; find the value of a binding by name
 (define lookup-binding
     (lambda (name state)
@@ -283,7 +291,8 @@
 (define update-binding
   (lambda (name newval state)
     (let ([index (return-pos-of-item name (get-state-names state))])
-         (replace-item-at-pos index newval (get-state-values state)))))
+      (return-state (get-state-names state)
+                    (replace-item-at-pos index newval (get-state-values state))))))
 
 ; delete a binding
 (define remove-binding
@@ -296,17 +305,30 @@
 ;;;; ---------------------------------------------------------
 ;;;; LIST MANIPULATION HELPERS
 ;;;; ---------------------------------------------------------
+;; Helper: total number of atoms across all nested sublists
+(define flat-length
+  (lambda (lis)
+    (cond
+      ((null? lis) 0)
+      ((list? (car lis)) (+ (flat-length (car lis)) (flat-length (cdr lis))))
+      (else (+ 1 (flat-length (cdr lis)))))))
 
 (define return-pos-of-item-cps
   (lambda (item lis return)
     (cond
       ((null? item) type-err)
-      ((null? lis) missing-err)
+      ((null? lis)  missing-err)
+      ((list? (car lis))
+       ;; Search inside the sublist directly; if not found, skip its length and continue
+       (let ([inner (return-pos-of-item-cps item (car lis) (lambda (v) v))])
+         (if (eq? missing-err inner)
+             (return-pos-of-item-cps item (cdr lis)
+               (lambda (v) (return (+ (flat-length (car lis)) v))))
+             (return inner))))
       ((eq? item (car lis)) (return 0))
-      ((list? (car lis)) (return-pos-of-item-cps item (car lis) 
-                           (lambda (v1) (return-pos-of-item-cps item (cdr lis) 
-                           (lambda (v2) (return (+ v1 v2)))))))
-      (else (return-pos-of-item-cps item (cdr lis) (lambda (v) (return (+ v 1))))))))
+      (else
+       (return-pos-of-item-cps item (cdr lis)
+         (lambda (v) (return (+ 1 v))))))))
 
 (define return-pos-of-item
   (lambda (item lis)
@@ -317,13 +339,14 @@
     (cond
       ((not (number? pos)) type-err)
       ((null? lis) (return #f pos))
-      ((zero? pos) (return (car lis) 0)) 
       ((list? (car lis))
-       (return-item-at-pos-cps pos (car lis)
-         (lambda (v1 pos1)
-           (if (zero? pos1)
-               (return v1 0)      
-               (return-item-at-pos-cps pos1 (cdr lis) return)))))
+       (let ([sublen (flat-length (car lis))])
+         (if (< pos sublen)
+             ;; Target is inside this sublist
+             (return-item-at-pos-cps pos (car lis) return)
+             ;; Target is beyond this sublist — subtract its length and continue
+             (return-item-at-pos-cps (- pos sublen) (cdr lis) return))))
+      ((zero? pos) (return (car lis) 0))
       (else
        (return-item-at-pos-cps (- pos 1) (cdr lis) return)))))
 
@@ -335,20 +358,23 @@
   (lambda (pos lis return)
     (cond
       ((not (number? pos)) type-err)
-      ((null? lis) (return '() pos))          
-      ((zero? pos) (return (cdr lis) 0))     
+      ((null? lis) (return '() pos))
       ((list? (car lis))
-       (remove-item-at-pos-cps pos (car lis)
-         (lambda (v1 pos1)
-           (if (zero? pos1)
-               (return (cons v1 (cdr lis)) 0)       
-               (remove-item-at-pos-cps pos1 (cdr lis)   
-                 (lambda (v2 pos2)
-                   (return (cons (car lis) v2) pos2)))))))
+       (let ([sublen (flat-length (car lis))])
+         (if (< pos sublen)
+             ;; Target is inside this sublist — recurse in and reconstruct
+             (remove-item-at-pos-cps pos (car lis)
+               (lambda (v1 pos1)
+                 (return (cons v1 (cdr lis)) pos1)))
+             ;; Target is beyond this sublist — skip and recurse on rest
+             (remove-item-at-pos-cps (- pos sublen) (cdr lis)
+               (lambda (v2 pos2)
+                 (return (cons (car lis) v2) pos2))))))
+      ((zero? pos) (return (cdr lis) 0))
       (else
        (remove-item-at-pos-cps (- pos 1) (cdr lis)
          (lambda (v pos)
-           (return (cons (car lis) v) pos)))))))   
+           (return (cons (car lis) v) pos)))))))
 
 (define remove-item-at-pos
   (lambda (pos lis)
@@ -358,21 +384,22 @@
   (lambda (pos item lis return)
     (cond
       ((not (number? pos)) type-err)
-      ((null? lis) (return '() pos))          
-      ((zero? pos) (return (cons item (cdr lis)) 0))     
+      ((null? lis) (return '() pos))
       ((list? (car lis))
-       (replace-item-at-pos-cps pos item (car lis)
-         (lambda (v1 pos1)
-           (if (zero? pos1)
-               (return (cons v1 (cdr lis)) 0)       
-               (replace-item-at-pos-cps pos1 item (cdr lis)   
-                 (lambda (v2 pos2)
-                   (return (cons (car lis) v2) pos2)))))))
+       (let ([sublen (flat-length (car lis))])
+         (if (< pos sublen)
+             (replace-item-at-pos-cps pos item (car lis)
+               (lambda (v1 pos1)
+                 (return (cons v1 (cdr lis)) pos1)))
+             (replace-item-at-pos-cps (- pos sublen) item (cdr lis)
+               (lambda (v2 pos2)
+                 (return (cons (car lis) v2) pos2))))))
+      ((zero? pos) (return (cons item (cdr lis)) 0))
       (else
        (replace-item-at-pos-cps (- pos 1) item (cdr lis)
          (lambda (v pos)
-           (return (cons (car lis) v) pos)))))))   
+           (return (cons (car lis) v) pos)))))))
 
 (define replace-item-at-pos
   (lambda (pos item lis)
-    (remove-item-at-pos-cps pos item lis (lambda (state pos) state))))
+    (replace-item-at-pos-cps pos item lis (lambda (state pos) state)))) ; fix 3: was remove-item-at-pos-cps
