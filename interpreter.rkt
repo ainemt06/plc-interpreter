@@ -91,41 +91,42 @@
         ((eq? op 'begin) (block-of-code (block expr) state next return break continue throw))
         ((eq? op 'try) (try expr state next return break continue throw))
         ((eq? op 'throw) (throw-excep expr state next return break continue throw))
-            ((eq? op 'break) (display "break firing, state: ") (display state) (newline) (break state))
-            ((eq? op 'continue) (continue state))
+        ((eq? op 'break) (display "break firing, state: ") (display state) (newline) (break state))
+        ((eq? op 'continue) (continue state))
         (else type-err)))))
 
 ; try block, depends on newnext, newreturn, newbreak
 (define try
   (lambda (expr state next return break continue throw)
-    (let* ([tryblock   (operand1 expr)]
+    (let* ([tryblock   (operand1 expr)] ; let for more readability
            [catchblock (operand2 expr)]
-           [catchbody (if (null? catchblock) catchblock (operand2 catchblock))]
+           [catchbody (if (null? catchblock) catchblock (operand2 catchblock))] ; default catch if not provided, otherwise use provided
            [exceptvar  (if (null? catchblock) catchblock (car (operand1 catchblock)))]
            [finallyblock (operand3 expr)]
-           [finallybody (if (null? finallyblock) finallyblock (operand1 finallyblock))]
-           [newnext
+           [finallybody (if (null? finallyblock) finallyblock (operand1 finallyblock))] ; default finally if not provided, otherwise use provided
+           [newnext ; redefine next to move on
             (lambda (s)
               (block-of-code finallybody s next return break continue throw))]
-           [newreturn
+           [newreturn ; redefine return to return a value and continue on
             (lambda (v s)
               (block-of-code finallybody s (lambda (s2) (return v s2)) return break continue throw))]
-           [newbreak
+           [newbreak ; redefine break to break out early
             (lambda (s)
               (block-of-code finallybody s break return break continue throw))]
-           [newcontinue
+           [newcontinue ; redefine continue to start the next block of code
             (lambda (s)
               (block-of-code finallybody s continue return break continue throw))]
-           [newthrow
+           [newthrow ; redefine throw to end the program with a final block of code
             (lambda (e s)
               (block-of-code catchbody
-                (add-binding exceptvar e s)
-                (lambda (s2) (block-of-code finallybody s2 next return break continue throw))
-                (lambda (v s2) (block-of-code finallybody s2 (lambda (s3) (return v s3)) return break continue throw))
-                (lambda (s2) (block-of-code finallybody s2 break return break continue throw))
-                (lambda (s2) (block-of-code finallybody s2 continue return break continue throw))
-                (lambda (e2 s2) (block-of-code finallybody s2 (lambda (s3) (throw e2 s3)) return break continue throw))))])
+                             (add-binding exceptvar e s)
+                             (lambda (s2) (block-of-code finallybody s2 next return break continue throw))
+                             (lambda (v s2) (block-of-code finallybody s2 (lambda (s3) (return v s3)) return break continue throw))
+                             (lambda (s2) (block-of-code finallybody s2 break return break continue throw))
+                             (lambda (s2) (block-of-code finallybody s2 continue return break continue throw))
+                             (lambda (e2 s2) (block-of-code finallybody s2 (lambda (s3) (throw e2 s3)) return break continue throw))))])
       (block-of-code tryblock state newnext newreturn newbreak newcontinue newthrow))))
+
 ; throw an expression
 (define throw-excep
   (lambda (expr state next return break continue throw)
@@ -133,10 +134,10 @@
 
 ; declare and optionally initialize a variable
 (define declare
-    (lambda (expr state next return break continue throw) 
-            (if (= (length expr) 2)
-              (next (add-binding (operand1 expr) '* state)) ; unassigned variables default to the empty list
-              (next (add-binding (operand1 expr) (expression (operand2 expr) state) state)))))
+  (lambda (expr state next return break continue throw) 
+    (if (= (length expr) 2)
+        (next (add-binding (operand1 expr) '* state)) ; unassigned variables default to the empty list
+        (next (add-binding (operand1 expr) (expression (operand2 expr) state) state)))))
 
 ;; set a variable to a value
 (define assign
@@ -145,11 +146,11 @@
 
 ; return/print the value of this statement
 (define return-statement
-    (lambda (expr state next return break continue throw)
-       (let ([val (expression (operand1 expr) state)])
-         (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
-             (return (parse-bool val))
-             (return val state)))))
+  (lambda (expr state next return break continue throw)
+    (let ([val (expression (operand1 expr) state)])
+      (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
+          (return (parse-bool val))
+          (return val state)))))
 
 ; evaluate one of two statements based on a condition
 (define if-statement
@@ -164,16 +165,16 @@
 (define while
   (lambda (expr state next return break continue throw)
     (letrec
-      ([loop (lambda (state)
-               (display "while condition check, state: ") (display state) (newline)
-               (if (condition (operand1 expr) state)
-                   (statement (operand2 expr) state
-                     (lambda (s) (loop s))
-                     return
-                     (lambda (s) (display "break reached while: ") (display s) (newline) (next s))
-                     (lambda (s) (loop s))
-                     throw)
-                   (next state)))])
+        ([loop (lambda (state)
+                 (display "while condition check, state: ") (display state) (newline)
+                 (if (condition (operand1 expr) state)
+                     (statement (operand2 expr) state
+                                (lambda (s) (loop s))
+                                return
+                                (lambda (s) (display "break reached while: ") (display s) (newline) (next s))
+                                (lambda (s) (loop s))
+                                throw)
+                     (next state)))])
       (loop state))))
 
 ; evaluate a statement
@@ -288,6 +289,7 @@
                [vals  (cons (cons value (car (get-state-values state)))
                             (cdr (get-state-values state)))])
           (return-state names vals)))))
+
 ; find the value of a binding by name
 (define lookup-binding
   (lambda (name state)
@@ -297,6 +299,7 @@
           missing-err
           (cons value index)))))
 
+; update a binding by replace function
 (define update-binding
   (lambda (name newval state)
     (let ([index (return-pos-of-item name (get-state-names state))])
