@@ -13,7 +13,7 @@
 ; parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename)
-    (statement-list (parser filename) initial-state (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (value state) value))))
+    (statement-list (parser filename) initial-state (lambda (v) v) (lambda (v s) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v) v) (lambda (v s) v))))
 
 
 
@@ -118,7 +118,7 @@
                 (lambda (v s2) (block-of-code finallybody s2 (lambda (s3) (return v s3)) return break continue throw))
                 (lambda (s2) (block-of-code finallybody s2 break return break continue throw))
                 (lambda (s2) (block-of-code finallybody s2 continue return break continue throw))
-                (lambda (e2 s2) (block-of-code finallybody s2 next (lambda (s3) (throw e2 s3)) break continue throw))))])
+                (lambda (e2 s2) (block-of-code finallybody s2 (lambda (s3) (throw e2 s3)) return break continue throw))))])
       (block-of-code tryblock state newnext newreturn newbreak newcontinue newthrow))))
 ; throw an expression
 (define throw-excep
@@ -405,4 +405,4 @@
 
 (define replace-item-at-pos
   (lambda (pos item lis)
-    (replace-item-at-pos-cps pos item lis (lambda (state pos) state)))) 
+    (replace-item-at-pos-cps pos item lis (lambda (state pos) state))))
