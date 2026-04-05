@@ -13,7 +13,8 @@
 ; parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename)
-    (statement-list (parser filename) initial-state (lambda (v) v) (lambda (v s) v) (lambda (v) v) (lambda (v) v) (lambda (v s) v))))
+    (global-statement-list (parser filename) initial-state 
+    (lambda (v) v) (lambda (v s) v) (lambda (v) v) (lambda (v) v) (lambda (v s) v))))
 
 ;;;; ---------------------------------------------------------
 ;;;; CONSTANTS/ERRORS/SIMPLE ABSTRACTIONS
@@ -45,6 +46,7 @@
 (define (redefine-err) (error) 'redefine "Attempted to redefine a variable")
 (define (parse-err) (error 'parse "Parsing error"))
 (define (loop-err) (error 'loop "Break or continue used outside of loop"))
+(define (global-err) (error 'global "Invalid operation at the global layer"))
 
 ; turn #t & #f into 'true and 'false
 (define parse-bool
@@ -56,6 +58,22 @@
 ;;;; ---------------------------------------------------------
 ;;;; DENOTATIONAL SEMANTICS/M_STATE FUNCTIONS
 ;;;; ---------------------------------------------------------
+
+(define global-statement-list
+  (lambda (lis state next return break continue throw)
+    (if (null? lis)
+      (funcall 'main state next (lambda (v s) v) break continue throw) ; c=eck on this when funcall is set up
+      (global-statement (operator lis) state
+        (lambda (new-state) (global-statement-list (cdr lis) new-state next return break continue throw)
+          return break continue throw)))))
+
+(define global-statement
+  (lambda (expr state next return break continue throw)
+    (let ([op (operator expr)]) 
+         (cond
+          ((eq? op 'var) (declare expr state next return break continue throw))
+          ((eq? op 'function) (function expr state next return break continue throw))
+          (else global-err)))))
 
 ; Execute a block of code when a bracket is encountered
 (define block-of-code
