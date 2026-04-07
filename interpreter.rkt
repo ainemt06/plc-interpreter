@@ -193,6 +193,21 @@
               (next state)))])
          (loop state))))
 
+; call a function
+(define funcall
+  (lambda (name state next return break continue throw)
+    '()))
+
+; define a function
+(define function
+  (lambda (expr state next return break continue throw)
+    '()))
+
+; make a closure
+(define make-closure
+  (lambda (param-list body state)
+    '()))
+
 ; evaluate a statement
 (define expression
   (lambda (expr state) ; evaluate the expression as a condition and an int value
