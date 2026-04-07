@@ -29,6 +29,7 @@
 (define operand2 caddr)
 (define operand3 cadddr)
 (define block cdr)
+(define actualparams cddr)
 
 ; State/stack manipulation functions
 (define initial-state (list '() '()))
@@ -107,6 +108,8 @@
         ((eq? op 'begin) (block-of-code (block expr) state next return break continue throw))
         ((eq? op 'try) (try expr state next return break continue throw))
         ((eq? op 'throw) (throw-excep expr state next return break continue throw))
+        ((eq? op 'function) (function expr state next return break continue throw))
+        ((eq? op 'funcall) (funcall expr state next return break continue throw))
         ((eq? op 'break) (break state))
         ((eq? op 'continue) (continue state))
         (else type-err)))))
@@ -195,8 +198,30 @@
 
 ; call a function
 (define funcall
-  (lambda (name state next return break continue throw)
-    '()))
+  (lambda (expr state next return break continue throw)
+    (let* ([name (operand1 expr)]
+          [params (actualparams expr)]
+          [closure (lookup-binding name state)]
+          [environment (get-environment closure)]
+          [new-state (add-state-layer environment state)] ; have to add a custom layer
+          [bound-state (bind-parameters (get-params closure) params new-state state return)]
+          [functionnext (lambda (s) (next (restore-state state s)))]
+          [functionreturn (lambda (v, s) (return v (restore-state state s)))]
+          [functionbreak (lambda (s) loop-err)]
+          [functioncontinue (lambda (s) loop-err)]
+          [functionthrow (lambda (e, s) (throw e (restore-state state s)))])
+         ((statement-list (get-body closure) bound-state functionnext functionreturn functionbreak functioncontinue functionthrow)))))
+
+;; bind parameters
+(define bind-parameters
+  (lambda (formalparams actualparams new-state state return)
+    (if (null? formalparams)
+      new-state
+      (bind-parameters (cdr formalparams) (cdr actualparams) 
+                       (add-binding (car formalparams) 
+                                    (expression (car actualparams) state return) new-state) state return))))
+
+;; restore state         
 
 ; define a function
 (define function
