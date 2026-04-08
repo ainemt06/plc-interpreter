@@ -251,6 +251,18 @@
   (lambda (param-list body name state)
     (list param-list body (add-binding name '* state))))
 
+(define get-params
+  (lambda (closure)
+    (car closure)))
+
+(define get-body)
+  (lambda (closure)
+    (cadr closure)))
+
+(define get-environment
+  (lambda (closure)
+    (caddr closure)))
+
 ; evaluate a statement
 (define expression
   (lambda (expr state) ; evaluate the expression as a condition and an int value
@@ -337,7 +349,7 @@
               (if (boolean? val) ; check if this var is mapped to a boolean
                   val
                   type-err))))))
-                  
+
 ; check if this symbol is mapped to a value
 (define m-name
   (lambda (atom state)
