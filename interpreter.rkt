@@ -249,105 +249,62 @@
 
 ; evaluate a statement
 (define expression
-  (lambda (expr state return) ; evaluate the expression as a condition and an int value
-    (let ([int-binding (int-value expr state return)]
-          [bool-binding (condition expr state return)])
+  (lambda (expr state) ; evaluate the expression as a condition and an int value
+    (let ([int-binding (int-value expr state)]
+          [bool-binding (condition expr state)])
       (if (eq? int-binding type-err) ; return the binding that is valid
           (if (eq? bool-binding type-err)
               parse-err
-              (return (return-val bool-binding)))
-          (return (return-val int-binding))))))
+              (return-val bool-binding))
+          (return-val int-binding)))))
 
 ; evaluate an arithmetic expression
 (define int-value
-  (lambda (expr state return)
+  (lambda (expr state)
     (cond 
-      ((number? expr) (return expr)) ; return a number
-      ((symbol? expr) (return (m-int expr state))) ; return a variable representing a number
+      ((number? expr) expr) ; return a number
+      ((symbol? expr) (m-int expr state)) ; return a variable representing a number
       ((list? expr) ; evaluate an operation
        (let ((op (operator expr)))
          (cond
            ((eq? op '+)
-            (int-value (operand1 expr) state
-                       (lambda (v1)
-                         (int-value (operand2 expr)
-                                    (lambda (v2) (return (+ v1 v2)))))))
-            ((eq? op '-)
-             (if (= (length expr) 2)
-                 (int-value (operand1 expr) state (lambda (v) return (- v)))
-                 ((int-value (operand1 expr) state
-                             (lambda (v1)
-                               (int-value (operand2 expr)
-                                          (lambda (v2) (return (- v1 v2)))))))))
+            (+ (int-value (operand1 expr) state)
+               (int-value (operand2 expr) state)))
+           ((eq? op '-)
+            (if (= (length expr) 2)
+                (- (int-value (operand1 expr) state)) 
+                (- (int-value (operand1 expr) state)
+                   (int-value (operand2 expr) state)))) 
            ((eq? op '*)
-            (int-value (operand1 expr) state
-                       (lambda (v1)
-                         (int-value (operand2 expr)
-                                    (lambda (v2) (return (* v1 v2)))))))
+            (* (int-value (operand1 expr) state)
+               (int-value (operand2 expr) state)))
            ((eq? op '/)
-            (int-value (operand1 expr) state
-                       (lambda (v1)
-                         (int-value (operand2 expr)
-                                    (lambda (v2) (return (quotient v1 v2)))))))
+            (quotient (int-value (operand1 expr) state)
+                      (int-value (operand2 expr) state)))
            ((eq? op '%)
-            (int-value (operand1 expr) state
-                       (lambda (v1)
-                         (int-value (operand2 expr)
-                                    (lambda (v2) (return (remainder v1 v2)))))))
+            (remainder (int-value (operand1 expr) state)
+                       (int-value (operand2 expr) state)))
            (else type-err))))
       (else type-err))))
   
 ; evaluate a boolean condition
 (define condition
-  (lambda (expr state return)
+  (lambda (expr state)
     (cond
-      ((boolean? expr) (return (parse-bool expr))) ; return a boolean
-      ((symbol? expr) (return (m-bool expr state))) ; return a variable representing a boolean
+      ((boolean? expr) (parse-bool expr)) ; return a boolean
+      ((symbol? expr) (m-bool expr state)) ; return a variable representing a boolean
       ((list? expr)
        (let ([op (operator expr)]) ; evaluate a condition
          (cond
-           ((eq? op '!)
-            (condition (operand1 expr) state (lambda (v) (return (not v)))))
-           ((eq? op '&&)
-            (condition (operand1 expr) state
-                       (lambda (v1)
-                         (condition (operand2 expr)
-                                    (lambda (v2) (return (and v1`v2)))))))
-           ((eq? op '||)
-            (condition (operand1 expr) state
-                       (lambda (v1)
-                         (condition (operand2 expr)
-                                    (lambda (v2) (return (or v1`v2)))))))
-           ((eq? op '==)
-            (expression (operand1 expr) state
-                        (lambda (v1)
-                          (expression (operand2 expr)
-                                      (lambda (v2) (return (eq? v1`v2)))))))
-           ((eq? op '!=)
-            (expression (operand1 expr) state
-                        (lambda (v1)
-                          (expression (operand2 expr)
-                                      (lambda (v2) (return (not (eq? v1`v2))))))))
-           ((eq? op '<)
-            (int-value (operand1 expr) state
-                       (lambda (v1)
-                         (int-value (operand2 expr)
-                                    (lambda (v2) (return (< v1`v2)))))))
-           ((eq? op '>)
-            (int-value (operand1 expr) state
-                       (lambda (v1)
-                         (int-value (operand2 expr)
-                                    (lambda (v2) (return (> v1`v2)))))))
-           ((eq? op '>=)
-            (int-value (operand1 expr) state
-                       (lambda (v1)
-                         (int-value (operand2 expr)
-                                    (lambda (v2) (return (>= v1`v2)))))))
-           ((eq? op '<=)
-            (int-value (operand1 expr) state
-                       (lambda (v1)
-                         (int-value (operand2 expr)
-                                    (lambda (v2) (return (<= v1`v2)))))))
+           ((eq? op '!) (not (condition (operand1 expr) state)))
+           ((eq? op '&&)  (and (condition (operand1 expr) state) (condition (operand2 expr) state)))
+           ((eq? op '||)  (or (condition (operand1 expr) state) (condition (operand2 expr) state)))
+           ((eq? op '==)  (eq? (expression (operand1 expr) state) (expression (operand2 expr) state)))
+           ((eq? op '!=)  (not (eq? (expression (operand1 expr) state) (expression (operand2 expr) state))))
+           ((eq? op '<) (< (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+           ((eq? op '>) (> (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+           ((eq? op '>=) (>= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+           ((eq? op '<=) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
            (else type-err))))
       (else type-err))))
 
@@ -357,7 +314,7 @@
 
 ; evaluates the integer value of a mapping
 (define m-int
-  (lambda (atom state return)
+  (lambda (atom state)
     (if (number? atom) 
         atom ; return a literal number
         (let ([val (value-of-binding (lookup-binding atom state))]) 
@@ -376,7 +333,7 @@
               (if (boolean? val) ; check if this var is mapped to a boolean
                   val
                   type-err))))))
-
+                  
 ; check if this symbol is mapped to a value
 (define m-name
   (lambda (atom state)
