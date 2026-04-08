@@ -212,6 +212,21 @@
           [functionthrow (lambda (e, s) (throw e (restore-state state s)))])
          ((statement-list (get-body closure) bound-state functionnext functionreturn functionbreak functioncontinue functionthrow)))))
 
+;; restore state 
+(define restore-state
+  (lambda (activestate functionstate)
+    (restore-state-cps activestate functionstate (lambda (v) v))))
+
+(define restore-state-cps
+  (lambda (activestate functionstate return)
+      (let ([binding (peek-binding functionstate)])
+           (if (empty-lis? functionstate)
+               activestate
+               (restore-state-cps activestate 
+                  (pop-binding functionstate) 
+                  (lambda (v) (return 
+                      (update-binding (car binding) (cadr binding) activestate))))))))
+
 ;; bind parameters
 (define bind-parameters
   (lambda (formalparams actualparams new-state state return)
@@ -220,8 +235,7 @@
       (bind-parameters (cdr formalparams) (cdr actualparams) 
                        (add-binding (car formalparams) 
                                     (expression (car actualparams) state return) new-state) state return))))
-
-;; restore state         
+       
 
 ; define a function
 (define function
@@ -398,6 +412,19 @@
           missing-err
           (cons value index)))))
 
+; return the name and value of the binding at the first element
+(define peek-binding
+  (lambda (state)
+    (let ([name (return-item-at-pos first-index (get-state-names state))]
+          [value (return-item-at-pos first-index (get-state-values state))])
+          (cons name value))))
+
+; remove the first element of the state
+(define pop-binding
+  (lambda (state)
+    (return-state (remove-item-at-pos first-index (get-state-names state))
+                    (remove-item-at-pos first-index (get-state-values state)))))
+
 ; update a binding by replace function
 (define update-binding
   (lambda (name newval state)
@@ -416,6 +443,19 @@
 ;;;; ---------------------------------------------------------
 ;;;; LIST MANIPULATION HELPERS
 ;;;; ---------------------------------------------------------
+
+(define empty-lis?
+(lambda (lis)
+(empty-cps lis (lambda (v) v))))
+
+(define empty-cps 
+  (lambda (lis return)
+    (cond
+      ((null? lis) (return #t))
+      ((pair? (car lis)) (return #f))
+      ((null? (car lis)) (empty-cps (cdr lis) return))
+      (else (return #f)))))
+
 ;; Helper: total number of atoms across all nested sublists
 (define flat-length
   (lambda (lis)
