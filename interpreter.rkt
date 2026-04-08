@@ -200,13 +200,13 @@
 
 ; define a function
 (define function
-  (lambda (expr state next return break continue throw)
-    '()))
+  (lambda (name formal-params body state)
+    (add-binding name (make-closure formal-params body name state) state)))
 
 ; make a closure
 (define make-closure
-  (lambda (param-list body state)
-    '()))
+  (lambda (param-list body name state)
+    (list param-list body (add-binding name '* state))))
 
 ; evaluate a statement
 (define expression
