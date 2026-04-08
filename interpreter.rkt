@@ -229,10 +229,14 @@
 
 ;; bind parameters
 (define bind-parameters
+  (lambda (formalparams actualparams new-state state)
+    (bind-parameters-cps formalparams actualparams new-state state (lambda (v) v))))
+
+(define bind-parameters-cps
   (lambda (formalparams actualparams new-state state return)
     (if (null? formalparams)
       new-state
-      (bind-parameters (cdr formalparams) (cdr actualparams) 
+      (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
                        (add-binding (car formalparams) 
                                     (expression (car actualparams) state return) new-state) state return))))
        
