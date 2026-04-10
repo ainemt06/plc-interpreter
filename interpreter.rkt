@@ -202,7 +202,7 @@
     (let* ([name (operand1 expr)]
           [params (actualparams expr)]
           [closure (lookup-binding name state)]
-          [environment (get-environment closure)]
+          [environment (get-environment closure)] ; if closure = *, then skip this step and run the body in the same enviornment
           [new-state (add-state-layer environment state)] ; have to add a custom layer
           [bound-state (bind-parameters (get-params closure) params new-state state return)]
           [functionnext (lambda (s) (next (restore-state state s)))]
@@ -247,9 +247,14 @@
     (add-binding name (make-closure formal-params body name state) state)))
 
 ; make a closure
+; a function has a closure that consists of:
+;   (param-list body (state with function added))
+;   (state with function added) = (param-list body *)
+;   * indicates that this is inside iteself so you should maintain the state and call the body
+;   and params of the function again
 (define make-closure
   (lambda (param-list body name state)
-    (list param-list body (add-binding name '* state))))
+    (list param-list body (add-binding name (list param-list body '*) state))))
 
 (define get-params
   (lambda (closure)
