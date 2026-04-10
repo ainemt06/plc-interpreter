@@ -36,6 +36,10 @@
 (define get-state-names (lambda (state) (car state)))
 (define get-state-values (lambda (state) (cadr state)))
 (define add-state-layer (lambda (state) (return-state (cons '() (get-state-names state)) (cons '() (get-state-values state)))))
+(define add-custom-state-layer
+  (lambda (layer state)
+    (return-state (list (get-state-names layer) (get-state-names state))
+                  (list (get-state-values layer) (get-state-values state)))))
 (define remove-state-layer (lambda (state) (return-state (cdr (get-state-names  state)) (cdr (get-state-values state)))))
 (define return-state (lambda (names vals) (list names vals)))
 (define return-val (lambda (v) v))
@@ -203,7 +207,7 @@
           [params (actualparams expr)]
           [closure (lookup-binding name state)]
           [environment (get-environment closure state)] ; if closure = *, then skip this step and run the body in the same enviornment
-          [new-state (add-state-layer environment state)] ; have to add a custom layer
+          [new-state (add-custom-state-layer environment state)] 
           [bound-state (bind-parameters (get-params closure) params new-state state return)]
           [functionnext (lambda (s) (next (restore-state state s)))]
           [functionreturn (lambda (v, s) (return v (restore-state state s)))]
