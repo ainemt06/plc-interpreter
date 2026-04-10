@@ -255,7 +255,7 @@
   (lambda (closure)
     (car closure)))
 
-(define get-body)
+(define get-body
   (lambda (closure)
     (cadr closure)))
 
