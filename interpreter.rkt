@@ -202,7 +202,7 @@
     (let* ([name (operand1 expr)]
           [params (actualparams expr)]
           [closure (lookup-binding name state)]
-          [environment (get-environment closure)] ; if closure = *, then skip this step and run the body in the same enviornment
+          [environment (get-environment closure state)] ; if closure = *, then skip this step and run the body in the same enviornment
           [new-state (add-state-layer environment state)] ; have to add a custom layer
           [bound-state (bind-parameters (get-params closure) params new-state state return)]
           [functionnext (lambda (s) (next (restore-state state s)))]
@@ -265,8 +265,10 @@
     (cadr closure)))
 
 (define get-environment
-  (lambda (closure)
-    (caddr closure)))
+  (lambda (closure state)
+    (if (eq? '* (caddr (lookup-binding closure state)))
+      state
+      (get-environment closure))))
 
 ; evaluate a statement
 (define expression
