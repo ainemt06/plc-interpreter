@@ -155,7 +155,7 @@
   (lambda (expr state next return break continue throw) 
     (if (= (length expr) 2)
         (next (add-binding (operand1 expr) '* state)) ; unassigned variables default to the empty list
-        (next (add-binding (operand1 expr) (expression (operand2 expr) state return throw) state)))))
+        (next (add-binding (operand1 expr) (expression (operand2 expr) state next return break continue throw) state)))))
 
 ;; set a variable to a value
 (define assign
@@ -185,7 +185,7 @@
   (lambda (expr state next return break continue throw)
     (letrec
         ([loop (lambda (state)
-           (if (condition (operand1 expr) state return throw)
+           (if (condition (operand1 expr) state next return break continue throw)
                (statement (operand2 expr) state
                           (lambda (s) (loop s))
                           return
@@ -212,57 +212,57 @@
 
 ; evaluate a statement
 (define expression ; return, return from function, throw exception
-  (lambda (expr state return throw) ; evaluate the expression as a condition and an int value
-    (let ([int-binding (int-value expr state return throw)]
-          [bool-binding (condition expr state return throw)])
+  (lambda (expr state next return break continue throw) ; evaluate the expression as a condition and an int value
+    (let ([int-binding (int-value expr state next return break continue throw)]
+          [bool-binding (condition expr state next return break continue throw)])
       (if (eq? int-binding type-err) ; return the binding that is valid
           (if (eq? bool-binding type-err)
-              (throw parse-err)
+              parse-err
               (return (return-val bool-binding) state))
           (return (return-val int-binding) state)))))
 
 ; evaluate an arithmetic expression
 (define int-value
-  (lambda (expr state return throw) ; return, return from function, throw exception
+  (lambda (expr state next return break continue throw) ; return, return from function, throw exception
     (cond 
       ((number? expr) (return expr state)) ; return a number
-      ((symbol? expr) (return (m-int expr) state)) ; return a variable representing a number
+      ((symbol? expr) (return (m-int expr state) state)) ; return a variable representing a number
       ((list? expr) ; evaluate an operation
        (let ((op (operator expr)))
          (cond
            ((eq? op '+)
-            (int-value (operand1 expr) state
+            (int-value (operand1 expr) state next
                        (lambda (v1)
-                         (int-value (operand2 expr) state
-                                    (lambda (v2) (return (+ v1 v2) state)) throw)) throw))
+                         (int-value (operand2 expr) state next
+                                    (lambda (v2) (return (+ v1 v2) state)) break continue throw)) break continue throw))
             ((eq? op '-)
              (if (= (length expr) 2)
-                 (int-value (operand1 expr) state (lambda (v) (return (- v) state)) throw)
-                 (int-value (operand1 expr) state
+                 (int-value (operand1 expr) state next (lambda (v) (return (- v) state)) break continue throw)
+                 (int-value (operand1 expr) state next
                              (lambda (v1)
-                               (int-value (operand2 expr) state
-                                          (lambda (v2) (return (- v1 v2) state)) throw)) throw)))
+                               (int-value (operand2 expr) state next
+                                          (lambda (v2) (return (- v1 v2) state)) break continue throw)) break continue throw)))
            ((eq? op '*)
-            (int-value (operand1 expr) state
+            (int-value (operand1 expr) state next
                        (lambda (v1)
-                         (int-value (operand2 expr) state
-                                    (lambda (v2) (return (* v1 v2) state)) throw)) throw))
+                         (int-value (operand2 expr) state next
+                                    (lambda (v2) (return (* v1 v2) state)) break continue throw)) break continue throw))
            ((eq? op '/)
-            (int-value (operand1 expr) state
+            (int-value (operand1 expr) state next
                        (lambda (v1)
-                         (int-value (operand2 expr) state
-                                    (lambda (v2) (return (quotient v1 v2) state)) throw)) throw))
+                         (int-value (operand2 expr) state next
+                                    (lambda (v2) (return (quotient v1 v2) state)) break continue throw)) break continue throw))
            ((eq? op '%)
-            (int-value (operand1 expr) state
+            (int-value (operand1 expr) state next
                        (lambda (v1)
-                         (int-value (operand2 expr) state
-                                    (lambda (v2) (return (remainder v1 v2) state)) throw)) throw))
-           (else (throw type-err)))))
-      (else (throw type-err)))))
+                         (int-value (operand2 expr) state next
+                                    (lambda (v2) (return (remainder v1 v2) state)) break continue throw)) break continue throw))
+           (else type-err))))
+      (else type-err))))
   
-; evaluate a boolean condition
+; Evaluate a boolean condition
 (define condition
-  (lambda (expr state return throw) ; return, return from function, throw exception
+  (lambda (expr state next return break continue throw) ; return, return from function, throw exception
     (cond
       ((boolean? expr) (return (parse-bool expr) state)) ; return a boolean
       ((symbol? expr) (return (m-bool expr state) state)) ; return a variable representing a boolean
@@ -270,49 +270,49 @@
        (let ([op (operator expr)]) ; evaluate a condition
          (cond
            ((eq? op '!)
-            (condition (operand1 expr) state (lambda (v) (return (not v) state) throw)))
+            (condition (operand1 expr) state next (lambda (v) (return (not v) state) throw) break continue throw))
            ((eq? op '&&)
-            (condition (operand1 expr) state
+            (condition (operand1 expr) state next
                        (lambda (v1)
-                         (condition (operand2 expr) state
-                                    (lambda (v2) (return (and v1 v2) state)) throw)) throw))
+                         (condition (operand2 expr) state next
+                                    (lambda (v2) (return (and v1 v2) state)) break continue throw)) break continue throw))
            ((eq? op '||)
-            (condition (operand1 expr) state
+            (condition (operand1 expr) state next
                        (lambda (v1)
-                         (condition (operand2 expr) state
-                                    (lambda (v2) (return (or v1 v2) state)) throw)) throw))
+                         (condition (operand2 expr) state next
+                                    (lambda (v2) (return (or v1 v2) state)) break continue throw)) break continue throw))
            ((eq? op '==)
-            (expression (operand1 expr) state
+            (expression (operand1 expr) state next
                         (lambda (v1)
-                          (expression (operand2 expr) state
-                                      (lambda (v2) (return (eq? v1 v2) state)) throw)) throw))
+                          (expression (operand2 expr) state next
+                                      (lambda (v2) (return (eq? v1 v2) state)) break continue throw)) break continue throw))
            ((eq? op '!=)
-            (expression (operand1 expr) state
+            (expression (operand1 expr) state next
                         (lambda (v1)
-                          (expression (operand2 expr) state
-                                      (lambda (v2) (return (not (eq? v1 v2)) state)) throw)) throw))
+                          (expression (operand2 expr) state next
+                                      (lambda (v2) (return (not (eq? v1 v2)) state)) break continue throw)) break continue throw))
            ((eq? op '<)
-            (int-value (operand1 expr) state
+            (int-value (operand1 expr) state next
                        (lambda (v1)
-                         (int-value (operand2 expr) state
-                                    (lambda (v2) (return (< v1 v2) state)) throw)) throw))
+                         (int-value (operand2 expr) state next
+                                    (lambda (v2) (return (< v1 v2) state)) break continue throw)) break continue throw))
            ((eq? op '>)
-            (int-value (operand1 expr) state
+            (int-value (operand1 expr) state next
                        (lambda (v1)
-                         (int-value (operand2 expr) state
-                                    (lambda (v2) (return (> v1 v2) state)) throw)) throw))
+                         (int-value (operand2 expr) state next
+                                    (lambda (v2) (return (> v1 v2) state)) break continue throw)) break continue throw))
            ((eq? op '>=)
-            (int-value (operand1 expr) state
+            (int-value (operand1 expr) state next
                        (lambda (v1)
-                         (int-value (operand2 expr) state
-                                    (lambda (v2) (return (>= v1 v2) state)) throw)) throw))
+                         (int-value (operand2 expr) state next
+                                    (lambda (v2) (return (>= v1 v2) state)) break continue throw)) break continue throw))
            ((eq? op '<=)
-            (int-value (operand1 expr) state
+            (int-value (operand1 expr) state next
                        (lambda (v1)
-                         (int-value (operand2 expr) state
-                                    (lambda (v2) (return (<= v1 v2) state)) throw)) throw))
-           (else (throw type-err)))))
-      (else (throw type-err)))))
+                         (int-value (operand2 expr) state next
+                                    (lambda (v2) (return (<= v1 v2) state)) break continue throw)) break continue throw))
+           (else type-err))))
+      (else type-err))))
 
 ;;;; ---------------------------------------------------------
 ;;;; MAPPINGS
