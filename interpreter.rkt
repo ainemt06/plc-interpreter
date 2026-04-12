@@ -1,7 +1,6 @@
 #lang racket
 (require "functionParser.rkt")
 
-
 ;;;; =======================================================================
 ;;;; Aine Thomas (amt267) Daniel Borhegyi (dmb236)
 ;;;; =======================================================================
@@ -10,7 +9,7 @@
 ;;;; INTERPRET
 ;;;; ---------------------------------------------------------
 
-; parse a file, then interpret it with the initial state
+; Parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename)
     (global-statement-list (parser filename) initial-state 
@@ -53,7 +52,7 @@
 (define (loop-err) (error 'loop "Break or continue used outside of loop"))
 (define (global-err) (error 'global "Invalid operation at the global layer"))
 
-; turn #t & #f into 'true and 'false
+; Turn #t & #f into 'true and 'false
 (define parse-bool
   (lambda (bool)
     (if bool
@@ -64,6 +63,7 @@
 ;;;; DENOTATIONAL SEMANTICS/M_STATE FUNCTIONS
 ;;;; ---------------------------------------------------------
 
+; First function that runs to establish the environment and call the main function
 (define global-statement-list
   (lambda (lis state next return break continue throw)
     (if (null? lis)
@@ -72,6 +72,7 @@
         (lambda (new-state) (global-statement-list (cdr lis) new-state next return break continue throw))
           return break continue throw))))
 
+; Parse all the functions and global variables
 (define global-statement
   (lambda (expr state next return break continue throw)
     (let ([op (operator expr)])
@@ -90,7 +91,7 @@
                     (lambda (s) (continue (remove-state-layer s))) 
                     throw)))
 
-; recurse through a list of statements and update the state with each one
+; Recurse through a list of statements and update the state with each one
 (define statement-list
   (lambda (lis state next return break continue throw)
     (if (null? lis) 
@@ -99,7 +100,7 @@
                    (lambda (new-state) (statement-list (cdr lis) new-state next return break continue throw)) ; continue through the statements
                    return break continue throw))))
 
-; parse out the type of a statement and evaluate it (basically our M_state)
+; Parse out the type of a statement and evaluate it (basically our M_state)
 (define statement
   (lambda (expr state next return break continue throw)
     (let ([op (operator expr)])
@@ -118,7 +119,7 @@
         ((eq? op 'continue) (continue state))
         (else type-err)))))
 
-; try block, depends on newnext, newreturn, newbreak
+; Try block, depends on newnext, newreturn, newbreak
 (define try
   (lambda (expr state next return break continue throw)
     (let* ([tryblock   (operand1 expr)] ; let for more readability
@@ -150,24 +151,24 @@
                              (lambda (e2 s2) (block-of-code finallybody s2 (lambda (s3) (throw e2 s3)) return break continue throw))))])
       (block-of-code tryblock state newnext newreturn newbreak newcontinue newthrow))))
 
-; throw an expression
+; Throw an expression
 (define throw-excep
   (lambda (expr state next return break continue throw)
     (throw (expression (operand1 expr) state) state return)))
 
-; declare and optionally initialize a variable
+; Declare and optionally initialize a variable
 (define declare
   (lambda (expr state next return break continue throw) 
     (if (= (length expr) 2)
         (next (add-binding (operand1 expr) '* state)) ; unassigned variables default to the empty list
         (next (add-binding (operand1 expr) (expression (operand2 expr) state return) state)))))
 
-;; set a variable to a value
+;; Set a variable to a value
 (define assign
   (lambda (expr state next return break continue throw)
     (next (update-binding (operand1 expr) (expression (operand2 expr) state return) state))))
 
-; return/print the value of this statement
+; Return/print the value of this statement
 (define return-statement
   (lambda (expr state next return break continue throw)
     (let ([val (expression (operand1 expr) state return)])
@@ -175,7 +176,7 @@
           (return (parse-bool val))
           (return val state)))))
 
-; evaluate one of two statements based on a condition
+; Evaluate one of two statements based on a condition
 (define if-statement
   (lambda (expr state next return break continue throw)
     (let ([condition-result (condition (operand1 expr) state)])
@@ -200,7 +201,7 @@
               (next state)))])
          (loop state))))
 
-; call a function
+; Call a function with the needed continuations
 (define funcall
   (lambda (expr state next return break continue throw)
     (let* ([name (operand1 expr)]
@@ -231,11 +232,12 @@
                   (lambda (v) (return 
                       (update-binding (car binding) (cadr binding) activestate))))))))
 
-;; bind parameters
+;; bind parameters calling
 (define bind-parameters
   (lambda (formalparams actualparams new-state state)
     (bind-parameters-cps formalparams actualparams new-state state (lambda (v) v))))
 
+; Binding parameters
 (define bind-parameters-cps
   (lambda (formalparams actualparams new-state state return)
     (if (null? formalparams)
@@ -244,7 +246,7 @@
                        (add-binding (car formalparams) 
                                     (expression (car actualparams) state return) new-state) state return))))
        
-; define a function
+; Define a function with a closure
 (define function
   (lambda (expr state next return break continue throw)
     (let ([name (operand1 expr)]
@@ -262,21 +264,25 @@
   (lambda (param-list body name state)
     (list param-list body (add-binding name (list param-list body '*) state))))
 
+; Get parameters from closure
 (define get-params
   (lambda (closure)
     (car closure)))
 
+; Get body from closure
 (define get-body
   (lambda (closure)
     (cadr closure)))
 
+; Handles when you encounter a function inside itself to reuse the state, 
+; otherwise find body of new function.
 (define get-environment
   (lambda (closure state)
     (if (eq? '* (caddr (lookup-binding closure state)))
       state
       (get-environment closure))))
 
-; evaluate a statement
+; Evaluate a statement
 (define expression
   (lambda (expr state) ; evaluate the expression as a condition and an int value
     (let ([int-binding (int-value expr state)]
@@ -287,7 +293,7 @@
               (return-val bool-binding))
           (return-val int-binding)))))
 
-; evaluate an arithmetic expression
+; Evaluate an arithmetic expression
 (define int-value
   (lambda (expr state)
     (cond 
@@ -316,14 +322,14 @@
            (else type-err))))
       (else type-err))))
   
-; evaluate a boolean condition
+; Evaluate a boolean condition
 (define condition
   (lambda (expr state)
     (cond
-      ((boolean? expr) (parse-bool expr)) ; return a boolean
-      ((symbol? expr) (m-bool expr state)) ; return a variable representing a boolean
+      ((boolean? expr) (parse-bool expr)) ; Return a boolean
+      ((symbol? expr) (m-bool expr state)) ; Return a variable representing a boolean
       ((list? expr)
-       (let ([op (operator expr)]) ; evaluate a condition
+       (let ([op (operator expr)]) ; Evaluate a condition
          (cond
            ((eq? op '!) (not (condition (operand1 expr) state)))
            ((eq? op '&&)  (and (condition (operand1 expr) state) (condition (operand2 expr) state)))
@@ -341,33 +347,33 @@
 ;;;; MAPPINGS
 ;;;; ---------------------------------------------------------
 
-; evaluates the integer value of a mapping
+; Evaluates the integer value of a mapping
 (define m-int
   (lambda (atom state)
     (if (number? atom) 
-        atom ; return a literal number
+        atom ; Return a literal number
         (let ([val (value-of-binding (lookup-binding atom state))]) 
-          (if (number? val) ; check if this var is mapped to an int
+          (if (number? val) ; Check if this var is mapped to an int
               val 
               type-err)))))   
 
-; evaluates the boolean value of a mapping
+; Evaluates the boolean value of a mapping
 (define m-bool
   (lambda (atom state)
     (cond
       ((boolean? atom) atom)
       ((eq? 'false atom) #f)
-      ((eq? 'true atom) #t) ; return a literal boolean
+      ((eq? 'true atom) #t) ; Return a literal boolean
       (else (let ([val (value-of-binding (lookup-binding atom state))])
-              (if (boolean? val) ; check if this var is mapped to a boolean
+              (if (boolean? val) ; Check if this var is mapped to a boolean
                   val
                   type-err))))))
 
-; check if this symbol is mapped to a value
+; Check if this symbol is mapped to a value
 (define m-name
   (lambda (atom state)
     (let ([n (lookup-binding atom state)])
-      (if (or (eq? n type-err) (eq? n missing-err) (eq? n unbound-err)) ; check if it returns an error
+      (if (or (eq? n type-err) (eq? n missing-err) (eq? n unbound-err)) ; Check if it returns an error
           n
           atom))))
 
@@ -375,7 +381,7 @@
 ;;;; BINDING OPERATIONS
 ;;;; ---------------------------------------------------------
 
-;; add a binding to a layer of the state
+;; Add a binding to a layer of the state
 (define add-binding
   (lambda (name value state)
     (if (null? (get-state-names state))
@@ -389,7 +395,7 @@
                             (cdr (get-state-values state)))])
           (return-state names vals)))))
 
-; find the value of a binding by name
+; Find the value of a binding by name
 (define lookup-binding
   (lambda (name state)
     (let* ([index (return-pos-of-item name (get-state-names state))]
@@ -398,27 +404,27 @@
           missing-err
           (cons value index)))))
 
-; return the name and value of the binding at the first element
+; Return the name and value of the binding at the first element
 (define peek-binding
   (lambda (state)
     (let ([name (return-item-at-pos first-index (get-state-names state))]
           [value (return-item-at-pos first-index (get-state-values state))])
           (cons name value))))
 
-; remove the first element of the state
+; Remove the first element of the state
 (define pop-binding
   (lambda (state)
     (return-state (remove-item-at-pos first-index (get-state-names state))
                     (remove-item-at-pos first-index (get-state-values state)))))
 
-; update a binding by replace function
+; Update a binding by replace function
 (define update-binding
   (lambda (name newval state)
     (let ([index (return-pos-of-item name (get-state-names state))])
       (return-state (get-state-names state)
                     (replace-item-at-pos index newval (get-state-values state))))))
 
-; delete a binding
+; Delete a binding
 (define remove-binding
   (lambda (name state)
     (let* ([binding (lookup-binding name state)]
