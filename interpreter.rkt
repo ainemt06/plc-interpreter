@@ -69,8 +69,8 @@
     (if (null? lis)
       (funcall 'main state next (lambda (v s) v) break continue throw) ; c=eck on this when funcall is set up
       (global-statement (operator lis) state
-        (lambda (new-state) (global-statement-list (cdr lis) new-state next return break continue throw)
-          return break continue throw)))))
+        (lambda (new-state) (global-statement-list (cdr lis) new-state next return break continue throw))
+          return break continue throw))))
 
 (define global-statement
   (lambda (expr state next return break continue throw)
@@ -210,10 +210,10 @@
           [new-state (add-custom-state-layer environment state)] 
           [bound-state (bind-parameters (get-params closure) params new-state state return)]
           [functionnext (lambda (s) (next (restore-state state s)))]
-          [functionreturn (lambda (v, s) (return v (restore-state state s)))]
+          [functionreturn (lambda (v s) (return v (restore-state state s)))]
           [functionbreak (lambda (s) loop-err)]
           [functioncontinue (lambda (s) loop-err)]
-          [functionthrow (lambda (e, s) (throw e (restore-state state s)))])
+          [functionthrow (lambda (e s) (throw e (restore-state state s)))])
          ((statement-list (get-body closure) bound-state functionnext functionreturn functionbreak functioncontinue functionthrow)))))
 
 ;; restore state 
@@ -244,11 +244,13 @@
                        (add-binding (car formalparams) 
                                     (expression (car actualparams) state return) new-state) state return))))
        
-
 ; define a function
 (define function
-  (lambda (name formal-params body state)
-    (add-binding name (make-closure formal-params body name state) state)))
+  (lambda (expr state next return break continue throw)
+    (let ([name (operand1 expr)]
+          [formal-params (operand2 expr)]
+          [body (operand3 expr)]) 
+          (add-binding name (make-closure formal-params body name state) state))))
 
 ; make a closure
 ; a function has a closure that consists of:
