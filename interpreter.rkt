@@ -121,7 +121,7 @@
         ((eq? op 'try) (try expr state next return break continue throw))
         ((eq? op 'throw) (throw-excep expr state next return break continue throw))
         ((eq? op 'function) (function expr state next return break continue throw))
-        ((eq? op 'funcall) (funcall (cdr expr) state next return break continue throw))
+        ((eq? op 'funcall) (funcall (cdr expr) state (lambda (s) (next s)) (lambda (v s) (next s)) break continue throw))
         ((eq? op 'break) (break state))
         ((eq? op 'continue) (continue state))
         (else type-err)))))
@@ -232,7 +232,7 @@
            [new-state (get-environment closure state)]
            [bound-state (bind-parameters (get-params closure) params new-state state next return break continue throw)]
            [functionnext     (lambda (s) (next (remove-state-layer s)))]
-           [functionreturn   (lambda (v s) (next (remove-state-layer s)))]
+           [functionreturn   (lambda (v s) (return v (remove-state-layer s)))]
            [functionbreak    (lambda (s) (loop-err))]
            [functioncontinue (lambda (s) (loop-err))]
            [functionthrow    (lambda (e s) (throw e (remove-state-layer s)))])
@@ -287,7 +287,7 @@
 (define evaluation
   (lambda (expr state next return break continue throw)
     (if (and (list? expr) (eq? (car expr) 'funcall))
-        (funcall (cdr expr) state next return break continue throw)
+        (funcall (cdr expr) state next (lambda (v s) v) break continue throw)
         (expression expr state next return break continue throw))))
 
 ; evaluate a statement
