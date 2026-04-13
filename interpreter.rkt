@@ -260,11 +260,13 @@
 
 (define bind-parameters-cps
   (lambda (formalparams actualparams new-state state next return break continue throw)
+    (if (= (length formalparams) (length actualparams))
     (if (null? formalparams)
       new-state
       (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
                        (add-binding (car formalparams) 
-                                    (evaluation (car actualparams) state next return break continue throw) new-state) state next return break continue throw))))
+                                    (evaluation (car actualparams) state next return break continue throw) new-state) state next return break continue throw))
+    (type-err))))
        
 ; define a function
 (define function
