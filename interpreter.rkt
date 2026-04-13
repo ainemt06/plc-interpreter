@@ -121,7 +121,7 @@
         ((eq? op 'try) (try expr state next return break continue throw))
         ((eq? op 'throw) (throw-excep expr state next return break continue throw))
         ((eq? op 'function) (function expr state next return break continue throw))
-        ((eq? op 'funcall) (funcall expr state next return break continue throw))
+        ((eq? op 'funcall) (funcall (cdr expr) state next return break continue throw))
         ((eq? op 'break) (break state))
         ((eq? op 'continue) (continue state))
         (else type-err)))))
@@ -161,7 +161,7 @@
 ; throw an expression
 (define throw-excep
   (lambda (expr state next return break continue throw)
-    (throw (expression (operand1 expr) state) state return)))
+    (throw (evaluation (operand1 expr) state next return break continue throw) state)))
 
 ; declare and optionally initialize a variable
 (define declare
@@ -198,7 +198,7 @@
   (lambda (expr state next return break continue throw)
     (letrec
         ([loop (lambda (state)
-           (if (condition (operand1 expr) state)
+           (if (evaluation (operand1 expr) state next return break continue throw)
                (statement (operand2 expr) state
                           (lambda (s) (loop s))
                           return
@@ -232,7 +232,7 @@
            [new-state (get-environment closure state)]
            [bound-state (bind-parameters (get-params closure) params new-state state next return break continue throw)]
            [functionnext     (lambda (s) (next (remove-state-layer s)))]
-           [functionreturn   (lambda (v s) (return v (remove-state-layer s)))]
+           [functionreturn   (lambda (v s) (next (remove-state-layer s)))]
            [functionbreak    (lambda (s) (loop-err))]
            [functioncontinue (lambda (s) (loop-err))]
            [functionthrow    (lambda (e s) (throw e (remove-state-layer s)))])
