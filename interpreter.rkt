@@ -86,7 +86,7 @@
          (cond
           ((eq? op 'var) (declare expr state next return break continue throw))
           ((eq? op 'function) (function expr state next return break continue throw))
-          (else global-err)))))
+          (else (global-err))))))
 
 ; Execute a block of code when a bracket is encountered
 (define block-of-code
@@ -208,19 +208,19 @@
               (next state)))])
          (loop state))))
 
-; call a function(define get-params
+
   (define get-params
     (lambda (closure)
-    (cadr closure)))   ; was car — skipped over 'closure tag
+    (cadr closure)))   
 
 (define get-body
   (lambda (closure)
-    (caddr closure)))  ; was cadr — same issue
+    (caddr closure)))  
 
 (define get-environment
   (lambda (closure state)
-    (let ([env (cadddr closure)])         ; inspect the closure directly, no re-lookup
-      (if (eq? '* env)                   ; recursive self-call marker
+    (let ([env (cadddr closure)])        
+      (if (eq? '* env)                   
           state
           env))))
 
@@ -238,20 +238,6 @@
            [functionthrow    (lambda (e s) (throw e (remove-state-layer s)))])
       (statement-list (get-body closure) (add-state-layer bound-state) functionnext functionreturn
                       functionbreak functioncontinue functionthrow))))
-;; restore state 
-(define restore-state
-  (lambda (activestate functionstate)
-    (restore-state-cps activestate functionstate (lambda (v) v))))
-
-(define restore-state-cps
-  (lambda (activestate functionstate return)
-      (let ([binding (peek-binding functionstate)])
-           (if (empty-lis? functionstate)
-               activestate
-               (restore-state-cps activestate 
-                  (pop-binding functionstate) 
-                  (lambda (v) (return 
-                      (update-binding (car binding) (cadr binding) activestate))))))))
 
 ;; bind parameters
 (define bind-parameters
@@ -260,11 +246,13 @@
 
 (define bind-parameters-cps
   (lambda (formalparams actualparams new-state state next return break continue throw)
+    (if (= (flat-length formalparams) (flat-length actualparams))    
     (if (null? formalparams)
       new-state
       (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
                        (add-binding (car formalparams) 
-                                    (evaluation (car actualparams) state next return break continue throw) new-state) state next return break continue throw))))
+                                    (evaluation (car actualparams) state next return break continue throw) new-state) state next return break continue throw))
+    (type-err))))
        
 ; define a function
 (define function
@@ -297,7 +285,7 @@
           [bool-binding (condition expr state next return break continue throw)])
       (if (eq? int-binding type-err) ; return the binding that is valid
           (if (eq? bool-binding type-err)
-              parse-err
+              (parse-err)
               (return-val bool-binding))
           (return-val int-binding)))))
 
@@ -327,8 +315,8 @@
            ((eq? op '%)
             (remainder (evaluation (operand1 expr) state next return break continue throw)
                        (evaluation (operand2 expr) state next return break continue throw)))
-           (else type-err))))
-      (else type-err))))
+           (else (type-err)))))
+      (else (type-err)))))
   
 ; evaluate a boolean condition
 (define condition
@@ -348,8 +336,8 @@
            ((eq? op '>) (> (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
            ((eq? op '>=) (>= (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
            ((eq? op '<=) (<= (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
-           (else type-err))))
-      (else type-err))))
+           (else (type-err)))))
+      (else (type-err)))))
 
 ;;;; ---------------------------------------------------------
 ;;;; MAPPINGS
@@ -363,7 +351,7 @@
         (let ([val (value-of-binding (lookup-binding atom state))]) 
           (if (number? val) ; check if this var is mapped to an int
               val 
-              type-err)))))   
+              (type-err))))))   
 
 ; evaluates the boolean value of a mapping
 (define m-bool
@@ -375,14 +363,14 @@
       (else (let ([val (value-of-binding (lookup-binding atom state))])
               (if (boolean? val) ; check if this var is mapped to a boolean
                   val
-                  type-err))))))
+                  (type-err)))))))
 
 ; check if this symbol is mapped to a value
 (define m-name
   (lambda (atom state)
     (let ([n (lookup-binding atom state)])
       (if (or (eq? n type-err) (eq? n missing-err) (eq? n unbound-err)) ; check if it returns an error
-          n
+          (n)
           atom))))
 
 ;;;; ---------------------------------------------------------
@@ -409,7 +397,7 @@
     (let* ([index (return-pos-of-item name (get-state-names state))]
            [value (return-item-at-pos index (get-state-values state))])
       (if (eq? missing-err index)
-          missing-err
+          (missing-err)
           (cons value index)))))
 
 ; return the name and value of the binding at the first element
@@ -480,8 +468,8 @@
 (define return-pos-of-item-cps
   (lambda (item lis return)
     (cond
-      ((null? item) type-err)
-      ((null? lis)  missing-err)
+      ((null? item) (type-err))
+      ((null? lis)  (missing-err))
       ((scope-list? (car lis))                          ; only recurse into scope sublists
        (let ([inner (return-pos-of-item-cps item (car lis) (lambda (v) v))])
          (if (eq? missing-err inner)
@@ -501,7 +489,7 @@
 (define return-item-at-pos-cps
   (lambda (pos lis return)
     (cond
-      ((not (number? pos)) type-err)
+      ((not (number? pos)) (type-err))
       ((null? lis) (return #f pos))
       ((scope-list? (car lis))
        (let ([sublen (flat-length (car lis))])
@@ -520,7 +508,7 @@
 (define remove-item-at-pos-cps
   (lambda (pos lis return)
     (cond
-      ((not (number? pos)) type-err)
+      ((not (number? pos)) (type-err))
       ((null? lis) (return '() pos))
       ((scope-list? (car lis))
        (let ([sublen (flat-length (car lis))])
@@ -545,7 +533,7 @@
 (define replace-item-at-pos-cps
   (lambda (pos item lis return)
     (cond
-      ((not (number? pos)) type-err)
+      ((not (number? pos)) (type-err))
       ((null? lis) (return '() pos))
       ((scope-list? (car lis))
        (let ([sublen (flat-length (car lis))])
