@@ -1,5 +1,5 @@
 #lang racket
-(require "functionParser.rkt")
+;(require "functionParser.rkt")
 
 
 ;;;; =======================================================================
@@ -13,7 +13,7 @@
 ; parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename)
-    (global-statement-list (parser filename) initial-state 
+    (global-statement-list filename initial-state 
     (lambda (v) v) (lambda (v s) v) (lambda (v) v) (lambda (v) v) (lambda (v s) v))))
 
 ;;;; ---------------------------------------------------------
@@ -96,7 +96,7 @@
                     return 
                     (lambda (s) (break (remove-state-layer s))) 
                     (lambda (s) (continue (remove-state-layer s))) 
-                    throw)))
+                    (lambda (e s) (throw e (remove-state-layer s))))))
 
 ; recurse through a list of statements and update the state with each one
 (define statement-list
@@ -260,13 +260,11 @@
 
 (define bind-parameters-cps
   (lambda (formalparams actualparams new-state state next return break continue throw)
-    (if (= (length formalparams) (length actualparams))
     (if (null? formalparams)
       new-state
       (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
                        (add-binding (car formalparams) 
-                                    (evaluation (car actualparams) state next return break continue throw) new-state) state next return break continue throw))
-    (type-err))))
+                                    (evaluation (car actualparams) state next return break continue throw) new-state) state next return break continue throw))))
        
 ; define a function
 (define function
