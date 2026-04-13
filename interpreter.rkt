@@ -69,10 +69,10 @@
     (if (null? lis)
         (let* ([closure    (value-of-binding (lookup-binding 'main state))]
                [new-state  (get-environment closure state)]
-               [bound-state (bind-parameters (get-params closure) '() new-state state)])
+               [bound-state (bind-parameters (get-params closure) '() new-state state next return break continue throw)])
           (statement-list (get-body closure) bound-state
-                          (lambda (s) (next s))         ; no restore
-                          (lambda (v s) (return v s))   ; no restore
+                          (lambda (s) (next s))         
+                          (lambda (v s) (return v s))   
                           (lambda (s) (loop-err))
                           (lambda (s) (loop-err))
                           throw))
@@ -168,17 +168,17 @@
   (lambda (expr state next return break continue throw) 
     (if (= (length expr) 2)
         (next (add-binding (operand1 expr) '* state)) ; unassigned variables default to the empty list
-        (next (add-binding (operand1 expr) (expression (operand2 expr) state) state)))))
+        (next (add-binding (operand1 expr) (evaluation (operand2 expr) state next return break continue throw) state)))))
 
 ;; set a variable to a value
 (define assign
   (lambda (expr state next return break continue throw)
-    (next (update-binding (operand1 expr) (expression (operand2 expr) state return) state))))
+    (next (update-binding (operand1 expr) (evaluation (operand2 expr) state next return break continue throw) state))))
 
 ; return/print the value of this statement
 (define return-statement
   (lambda (expr state next return break continue throw)
-    (let ([val (expression (operand1 expr) state)])
+    (let ([val (evaluation (operand1 expr) state next return break continue throw)])
       (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
           (return (parse-bool val))
           (return val state)))))
@@ -186,7 +186,7 @@
 ; evaluate one of two statements based on a condition
 (define if-statement
   (lambda (expr state next return break continue throw)
-    (let ([condition-result (condition (operand1 expr) state)])
+    (let ([condition-result (condition (operand1 expr) state next return break continue throw)])
       (if condition-result
           (statement (operand2 expr) state next return break continue throw) ; then
           (if (= (length expr) 4)
@@ -230,13 +230,13 @@
            [params      (actualparams expr)]
            [closure     (value-of-binding (lookup-binding name state))]  ; extract value from (val . idx)
            [new-state (get-environment closure state)]
-           [bound-state (bind-parameters (get-params closure) params new-state state)]
-           [functionnext     (lambda (s) (next (restore-state state s)))]
-           [functionreturn   (lambda (v s) (return v (restore-state state s)))]
+           [bound-state (bind-parameters (get-params closure) params new-state state next return break continue throw)]
+           [functionnext     (lambda (s) (next (remove-state-layer s)))]
+           [functionreturn   (lambda (v s) (return v (remove-state-layer s)))]
            [functionbreak    (lambda (s) (loop-err))]
            [functioncontinue (lambda (s) (loop-err))]
-           [functionthrow    (lambda (e s) (throw e (restore-state state s)))])
-      (statement-list (get-body closure) bound-state functionnext functionreturn
+           [functionthrow    (lambda (e s) (throw e (remove-state-layer s)))])
+      (statement-list (get-body closure) (add-state-layer bound-state) functionnext functionreturn
                       functionbreak functioncontinue functionthrow))))
 ;; restore state 
 (define restore-state
@@ -255,16 +255,16 @@
 
 ;; bind parameters
 (define bind-parameters
-  (lambda (formalparams actualparams new-state state)
-    (bind-parameters-cps formalparams actualparams new-state state (lambda (v) v))))
+  (lambda (formalparams actualparams new-state state next return break continue throw)
+    (bind-parameters-cps formalparams actualparams new-state state next return break continue throw)))
 
 (define bind-parameters-cps
-  (lambda (formalparams actualparams new-state state return)
+  (lambda (formalparams actualparams new-state state next return break continue throw)
     (if (null? formalparams)
       new-state
       (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
                        (add-binding (car formalparams) 
-                                    (expression (car actualparams) state return) new-state) state return))))
+                                    (evaluation (car actualparams) state next return break continue throw) new-state) state next return break continue throw))))
        
 ; define a function
 (define function
@@ -284,11 +284,17 @@
   (lambda (param-list body name state)
     (list 'closure param-list body (add-binding name (list 'closure param-list body '*) state))))
 
+(define evaluation
+  (lambda (expr state next return break continue throw)
+    (if (and (list? expr) (eq? (car expr) 'funcall))
+        (funcall (cdr expr) state next return break continue throw)
+        (expression expr state next return break continue throw))))
+
 ; evaluate a statement
 (define expression
-  (lambda (expr state) ; evaluate the expression as a condition and an int value
-    (let ([int-binding (int-value expr state)]
-          [bool-binding (condition expr state)])
+  (lambda (expr state next return break continue throw) ; evaluate the expression as a condition and an int value
+    (let ([int-binding (int-value expr state next return break continue throw)]
+          [bool-binding (condition expr state next return break continue throw)])
       (if (eq? int-binding type-err) ; return the binding that is valid
           (if (eq? bool-binding type-err)
               parse-err
@@ -297,7 +303,7 @@
 
 ; evaluate an arithmetic expression
 (define int-value
-  (lambda (expr state)
+  (lambda (expr state next return break continue throw)
     (cond 
       ((number? expr) expr) ; return a number
       ((symbol? expr) (m-int expr state)) ; return a variable representing a number
@@ -305,43 +311,43 @@
        (let ((op (operator expr)))
          (cond
            ((eq? op '+)
-            (+ (int-value (operand1 expr) state)
-               (int-value (operand2 expr) state)))
+            (+ (evaluation (operand1 expr) state next return break continue throw)
+               (evaluation (operand2 expr) state next return break continue throw)))
            ((eq? op '-)
             (if (= (length expr) 2)
-                (- (int-value (operand1 expr) state)) 
-                (- (int-value (operand1 expr) state)
-                   (int-value (operand2 expr) state)))) 
+                (- (evaluation (operand1 expr) state next return break continue throw)) 
+                (- (evaluation (operand1 expr) state next return break continue throw)
+                   (evaluation (operand2 expr) state next return break continue throw)))) 
            ((eq? op '*)
-            (* (int-value (operand1 expr) state)
-               (int-value (operand2 expr) state)))
+            (* (evaluation (operand1 expr) state next return break continue throw)
+               (evaluation (operand2 expr) state next return break continue throw)))
            ((eq? op '/)
-            (quotient (int-value (operand1 expr) state)
-                      (int-value (operand2 expr) state)))
+            (quotient (evaluation (operand1 expr) state next return break continue throw)
+                      (evaluation (operand2 expr) state next return break continue throw)))
            ((eq? op '%)
-            (remainder (int-value (operand1 expr) state)
-                       (int-value (operand2 expr) state)))
+            (remainder (evaluation (operand1 expr) state next return break continue throw)
+                       (evaluation (operand2 expr) state next return break continue throw)))
            (else type-err))))
       (else type-err))))
   
 ; evaluate a boolean condition
 (define condition
-  (lambda (expr state)
+  (lambda (expr state next return break continue throw)
     (cond
       ((boolean? expr) (parse-bool expr)) ; return a boolean
       ((symbol? expr) (m-bool expr state)) ; return a variable representing a boolean
       ((list? expr)
        (let ([op (operator expr)]) ; evaluate a condition
          (cond
-           ((eq? op '!) (not (condition (operand1 expr) state)))
-           ((eq? op '&&)  (and (condition (operand1 expr) state) (condition (operand2 expr) state)))
-           ((eq? op '||)  (or (condition (operand1 expr) state) (condition (operand2 expr) state)))
-           ((eq? op '==)  (eq? (expression (operand1 expr) state) (expression (operand2 expr) state)))
-           ((eq? op '!=)  (not (eq? (expression (operand1 expr) state) (expression (operand2 expr) state))))
-           ((eq? op '<) (< (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-           ((eq? op '>) (> (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-           ((eq? op '>=) (>= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
-           ((eq? op '<=) (<= (int-value (operand1 expr) state) (int-value (operand2 expr) state)))
+           ((eq? op '!) (not (evaluation (operand1 expr) state next return break continue throw)))
+           ((eq? op '&&)  (and (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
+           ((eq? op '||)  (or (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
+           ((eq? op '==)  (eq? (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
+           ((eq? op '!=)  (not (eq? (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw))))
+           ((eq? op '<) (< (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
+           ((eq? op '>) (> (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
+           ((eq? op '>=) (>= (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
+           ((eq? op '<=) (<= (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
            (else type-err))))
       (else type-err))))
 
@@ -497,14 +503,14 @@
     (cond
       ((not (number? pos)) type-err)
       ((null? lis) (return #f pos))
-      ((scope-list? (car lis))                          ; scope boundary — descend
+      ((scope-list? (car lis))
        (let ([sublen (flat-length (car lis))])
          (if (< pos sublen)
              (return-item-at-pos-cps pos (car lis) return)
              (return-item-at-pos-cps (- pos sublen) (cdr lis) return))))
-      ((zero? pos) (return (car lis) 0))               ; closure lands here, returned whole
+      ((zero? pos) (return (car lis) 0))
       (else
-       (return-item-at-pos-cps (- pos 1) (cdr lis) return)))))
+       (return-item-at-pos-cps (- pos 1) (cdr lis) return))))) ; ← just pass return
 
 (define return-item-at-pos
   (lambda (pos lis)
