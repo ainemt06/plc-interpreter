@@ -10,7 +10,7 @@
 ;;;; INTERPRET
 ;;;; ---------------------------------------------------------
 
-; parse a file, then interpret it with the initial state
+; Parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename)
     (global-statement-list filename initial-state 
@@ -53,7 +53,7 @@
 (define (loop-err) (error 'loop "Break or continue used outside of loop"))
 (define (global-err) (error 'global "Invalid operation at the global layer"))
 
-; turn #t & #f into 'true and 'false
+; Turn #t & #f into 'true and 'false
 (define parse-bool
   (lambda (bool)
     (if bool
@@ -64,6 +64,7 @@
 ;;;; DENOTATIONAL SEMANTICS/M_STATE FUNCTIONS
 ;;;; ---------------------------------------------------------
 
+; Evaluates the global statements in the program
 (define global-statement-list
   (lambda (lis state next return break continue throw)
     (if (null? lis)
@@ -80,6 +81,7 @@
         (lambda (new-state) (global-statement-list (cdr lis) new-state next return break continue throw))
           return break continue throw))))
 
+; Parsing global statements
 (define global-statement
   (lambda (expr state next return break continue throw)
     (let ([op (operator expr)])
@@ -107,7 +109,7 @@
                    (lambda (new-state) (statement-list (cdr lis) new-state next return break continue throw)) ; continue through the statements
                    return break continue throw))))
 
-; parse out the type of a statement and evaluate it (basically our M_state)
+; Parse out the type of a statement and evaluate it (basically our M_state)
 (define statement
   (lambda (expr state next return break continue throw)
     (let ([op (operator expr)])
@@ -126,7 +128,7 @@
         ((eq? op 'continue) (continue state))
         (else type-err)))))
 
-; try block, depends on newnext, newreturn, newbreak
+; Try block, depends on newnext, newreturn, newbreak
 (define try
   (lambda (expr state next return break continue throw)
     (let* ([tryblock   (operand1 expr)] ; let for more readability
@@ -158,24 +160,24 @@
                              (lambda (e2 s2) (block-of-code finallybody s2 (lambda (s3) (throw e2 s3)) return break continue throw))))])
       (block-of-code tryblock state newnext newreturn newbreak newcontinue newthrow))))
 
-; throw an expression
+; Throw an expression
 (define throw-excep
   (lambda (expr state next return break continue throw)
     (throw (evaluation (operand1 expr) state next return break continue throw) state)))
 
-; declare and optionally initialize a variable
+; Declare and optionally initialize a variable
 (define declare
   (lambda (expr state next return break continue throw) 
     (if (= (length expr) 2)
         (next (add-binding (operand1 expr) '* state)) ; unassigned variables default to the empty list
         (next (add-binding (operand1 expr) (evaluation (operand2 expr) state next return break continue throw) state)))))
 
-;; set a variable to a value
+; Set a variable to a value
 (define assign
   (lambda (expr state next return break continue throw)
     (next (update-binding (operand1 expr) (evaluation (operand2 expr) state next return break continue throw) state))))
 
-; return/print the value of this statement
+; Return/print the value of this statement
 (define return-statement
   (lambda (expr state next return break continue throw)
     (let ([val (evaluation (operand1 expr) state next return break continue throw)])
@@ -183,7 +185,7 @@
           (return (parse-bool val) state)
           (return val state)))))
 
-; evaluate one of two statements based on a condition
+; Evaluate one of two statements based on a condition
 (define if-statement
   (lambda (expr state next return break continue throw)
     (let ([condition-result (condition (operand1 expr) state next return break continue throw)])
@@ -193,7 +195,7 @@
               (statement (operand3 expr) state next return break continue throw) ; else
               (next state)))))) ; no else branch
 
-; while a condition is true, iterate through a code block
+; While a condition is true, iterate through a code block
 (define while
   (lambda (expr state next return break continue throw)
     (letrec
@@ -208,15 +210,17 @@
               (next state)))])
          (loop state))))
 
-; call a function(define get-params
+; Getting parameters of a funciton
   (define get-params
     (lambda (closure)
     (cadr closure)))   ; was car — skipped over 'closure tag
 
+; Getting the body of a function
 (define get-body
   (lambda (closure)
     (caddr closure)))  ; was cadr — same issue
 
+; Getting the enviornment of a function
 (define get-environment
   (lambda (closure state)
     (let ([env (cadddr closure)])         ; inspect the closure directly, no re-lookup
@@ -224,6 +228,8 @@
           state
           env))))
 
+; Steps to call a function, establish functional next, return, break, continue, throw
+; run the function with these
 (define funcall
   (lambda (expr state next return break continue throw)
     (let* ([name        (operator expr)]
@@ -238,11 +244,14 @@
            [functionthrow    (lambda (e s) (throw e (remove-state-layer s)))])
       (statement-list (get-body closure) (add-state-layer bound-state) functionnext functionreturn
                       functionbreak functioncontinue functionthrow))))
-;; restore state 
+
+; Restore state - not able to get this to restore properly, but we acknowledge this should be used
+; ended up using remove-state-layer for a similar effect that worked on most tests
 (define restore-state
   (lambda (activestate functionstate)
     (restore-state-cps activestate functionstate (lambda (v) v))))
 
+; Restores state from active state to function state
 (define restore-state-cps
   (lambda (activestate functionstate return)
       (let ([binding (peek-binding functionstate)])
@@ -253,11 +262,12 @@
                   (lambda (v) (return 
                       (update-binding (car binding) (cadr binding) activestate))))))))
 
-;; bind parameters
+; Bind parameters wrapper
 (define bind-parameters
   (lambda (formalparams actualparams new-state state next return break continue throw)
     (bind-parameters-cps formalparams actualparams new-state state next return break continue throw)))
 
+; Puts actual parameters into formal parameters
 (define bind-parameters-cps
   (lambda (formalparams actualparams new-state state next return break continue throw)
     (if (null? formalparams)
@@ -266,7 +276,7 @@
                        (add-binding (car formalparams) 
                                     (evaluation (car actualparams) state next return break continue throw) new-state) state next return break continue throw))))
        
-; define a function
+; Define a function
 (define function
   (lambda (expr state next return break continue throw)
     (let ([name (operand1 expr)]
@@ -274,23 +284,24 @@
           [body (operand3 expr)]) 
           (next (add-binding name (make-closure formal-params body name state) state)))))
 
-; make a closure
-; a function has a closure that consists of:
+; Make a closure
+; A function has a closure that consists of:
 ;   (param-list body (state with function added))
 ;   (state with function added) = (param-list body *)
 ;   * indicates that this is inside iteself so you should maintain the state and call the body
-;   and params of the function again
+;   and params of the function again, this is our recusion solution
 (define make-closure
   (lambda (param-list body name state)
     (list 'closure param-list body (add-binding name (list 'closure param-list body '*) state))))
 
+; Finds if a expression is a function or expression and acts accordingly
 (define evaluation
   (lambda (expr state next return break continue throw)
     (if (and (list? expr) (eq? (car expr) 'funcall))
         (funcall (cdr expr) state next (lambda (v s) v) break continue throw)
         (expression expr state next return break continue throw))))
 
-; evaluate a statement
+; Evaluate a statement
 (define expression
   (lambda (expr state next return break continue throw) ; evaluate the expression as a condition and an int value
     (let ([int-binding (int-value expr state next return break continue throw)]
@@ -301,7 +312,7 @@
               (return-val bool-binding))
           (return-val int-binding)))))
 
-; evaluate an arithmetic expression
+; Evaluate an arithmetic expression
 (define int-value
   (lambda (expr state next return break continue throw)
     (cond 
@@ -330,7 +341,7 @@
            (else type-err))))
       (else type-err))))
   
-; evaluate a boolean condition
+; Evaluate a boolean condition
 (define condition
   (lambda (expr state next return break continue throw)
     (cond
@@ -355,7 +366,7 @@
 ;;;; MAPPINGS
 ;;;; ---------------------------------------------------------
 
-; evaluates the integer value of a mapping
+; Evaluates the integer value of a mapping
 (define m-int
   (lambda (atom state)
     (if (number? atom) 
@@ -365,7 +376,7 @@
               val 
               type-err)))))   
 
-; evaluates the boolean value of a mapping
+; Evaluates the boolean value of a mapping
 (define m-bool
   (lambda (atom state)
     (cond
@@ -377,7 +388,7 @@
                   val
                   type-err))))))
 
-; check if this symbol is mapped to a value
+; Check if this symbol is mapped to a value
 (define m-name
   (lambda (atom state)
     (let ([n (lookup-binding atom state)])
@@ -389,7 +400,7 @@
 ;;;; BINDING OPERATIONS
 ;;;; ---------------------------------------------------------
 
-;; add a binding to a layer of the state
+;; Add a binding to a layer of the state
 (define add-binding
   (lambda (name value state)
     (if (null? (get-state-names state))
@@ -403,7 +414,7 @@
                             (cdr (get-state-values state)))])
           (return-state names vals)))))
 
-; find the value of a binding by name
+; Find the value of a binding by name
 (define lookup-binding
   (lambda (name state)
     (let* ([index (return-pos-of-item name (get-state-names state))]
@@ -412,27 +423,27 @@
           (cons missing-err '*)
           (cons value index)))))
 
-; return the name and value of the binding at the first element
+; Return the name and value of the binding at the first element
 (define peek-binding
   (lambda (state)
     (let ([name (return-item-at-pos first-index (get-state-names state))]
           [value (return-item-at-pos first-index (get-state-values state))])
           (cons name value))))
 
-; remove the first element of the state
+; Remove the first element of the state
 (define pop-binding
   (lambda (state)
     (return-state (remove-item-at-pos first-index (get-state-names state))
                     (remove-item-at-pos first-index (get-state-values state)))))
 
-; update a binding by replace function
+; Update a binding by replace function
 (define update-binding
   (lambda (name newval state)
     (let ([index (return-pos-of-item name (get-state-names state))])
       (return-state (get-state-names state)
                     (replace-item-at-pos index newval (get-state-values state))))))
 
-; delete a binding
+; Delete a binding
 (define remove-binding
   (lambda (name state)
     (let* ([binding (lookup-binding name state)]
@@ -444,10 +455,12 @@
 ;;;; LIST MANIPULATION HELPERS
 ;;;; ---------------------------------------------------------
 
+; Helper wrapper for empty lists
 (define empty-lis?
 (lambda (lis)
 (empty-cps lis (lambda (v) v))))
 
+; Recurse through a list to see if empty
 (define empty-cps 
   (lambda (lis return)
     (cond
@@ -456,7 +469,7 @@
       ((null? (car lis)) (empty-cps (cdr lis) return))
       (else (return #f)))))
 
-;; Helper: total number of atoms across all nested sublists
+; Helper: total number of atoms across all nested sublists
 (define flat-length
   (lambda (lis)
     (cond
@@ -464,19 +477,20 @@
       ((closure? (car lis)) (+ 1 (flat-length (cdr lis))))  ; closure = one item
       ((list? (car lis)) (+ (flat-length (car lis)) (flat-length (cdr lis))))
       (else (+ 1 (flat-length (cdr lis)))))))
-;; Recognizes a closure by its 4-element structure: (name (params) (body) (env))
+
+; Recognizes a closure by its 4-element structure: (name (params) (body) (env))
 (define closure?
   (lambda (x)
     (and (list? x)
          (= (length x) 4)
          (eq? 'closure (car x)))))
 
-;; Predicate: is this list a scope-level sublist (not a closure value)?
+; Predicate: is this list a scope-level sublist (not a closure value)?
 (define scope-list?
   (lambda (x)
     (and (list? x) (not (closure? x)))))
 
-
+; Return position of an item in a list
 (define return-pos-of-item-cps
   (lambda (item lis return)
     (cond
@@ -493,11 +507,12 @@
        (return-pos-of-item-cps item (cdr lis)
                                (lambda (v) (return (+ 1 v))))))))
 
+; Wrapper for position of item
 (define return-pos-of-item
   (lambda (item lis)
     (return-pos-of-item-cps item lis (lambda (v) v))))
 
-
+; Returns an item at a position
 (define return-item-at-pos-cps
   (lambda (pos lis return)
     (cond
@@ -510,13 +525,14 @@
              (return-item-at-pos-cps (- pos sublen) (cdr lis) return))))
       ((zero? pos) (return (car lis) 0))
       (else
-       (return-item-at-pos-cps (- pos 1) (cdr lis) return))))) ; ← just pass return
+       (return-item-at-pos-cps (- pos 1) (cdr lis) return))))) ; just pass return
 
+; Wrapper for an item at a position
 (define return-item-at-pos
   (lambda (pos lis)
     (return-item-at-pos-cps pos lis (lambda (v pos) v))))
 
-
+; Remove item at a position
 (define remove-item-at-pos-cps
   (lambda (pos lis return)
     (cond
@@ -537,11 +553,12 @@
                                (lambda (v pos)
                                  (return (cons (car lis) v) pos)))))))
 
+; Wrapper to remove item at a position
 (define remove-item-at-pos
   (lambda (pos lis)
     (remove-item-at-pos-cps pos lis (lambda (state pos) state))))
 
-
+; Replacing item at a position
 (define replace-item-at-pos-cps
   (lambda (pos item lis return)
     (cond
@@ -562,6 +579,7 @@
                                 (lambda (v pos)
                                   (return (cons (car lis) v) pos)))))))
 
+; Wrapper to replace an item at a position
 (define replace-item-at-pos
   (lambda (pos item lis)
     (replace-item-at-pos-cps pos item lis (lambda (state pos) state))))
