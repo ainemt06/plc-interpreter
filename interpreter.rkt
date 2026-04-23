@@ -223,13 +223,17 @@
 ; Getting the enviornment of a function
 (define get-environment
   (lambda (closure state)
-    (let ([env (cadddr closure)])         ; inspect the closure directly, no re-lookup
-      (if (eq? '* env)                   ; recursive self-call marker
-          state
-          env))))
+    (let ([numlayers (caddr closure)])
+    ((return-state (return-end-of-list numlayers (get-state-names state)) 
+                   (return-end-of-list numlayers (get-state-values state)))))))
 
 ; Steps to call a function, establish functional next, return, break, continue, throw
 ; run the function with these
+
+; we don't want to store that old state - grab the current values or just the state layers in common
+
+; strip off everything in scope
+; then restore and find out what has changed
 (define funcall
   (lambda (expr state next return break continue throw)
     (let* ([name        (operator expr)]
@@ -237,30 +241,26 @@
            [closure     (value-of-binding (lookup-binding name state))]  ; extract value from (val . idx)
            [new-state (get-environment closure state)]
            [bound-state (bind-parameters (get-params closure) params new-state state next return break continue throw)]
-           [functionnext     (lambda (s) (next (remove-state-layer s)))]
-           [functionreturn   (lambda (v s) (return v (remove-state-layer s)))]
+           [functionnext     (lambda (s) (next (restore-state new-state s)))]
+           [functionreturn   (lambda (v s) (return v (restore-state new-state s)))]
            [functionbreak    (lambda (s) (loop-err))]
            [functioncontinue (lambda (s) (loop-err))]
-           [functionthrow    (lambda (e s) (throw e (remove-state-layer s)))])
+           [functionthrow    (lambda (e s) (throw e (restore-state new-state s)))])
       (statement-list (get-body closure) (add-state-layer bound-state) functionnext functionreturn
                       functionbreak functioncontinue functionthrow))))
 
 ; Restore state - not able to get this to restore properly, but we acknowledge this should be used
 ; ended up using remove-state-layer for a similar effect that worked on most tests
+
+; keep track of the number of layers we add/strip
 (define restore-state
   (lambda (activestate functionstate)
-    (restore-state-cps activestate functionstate (lambda (v) v))))
+    (let* ([newvalues (get-state-values functionstate)]
+           [funclayers (length newvalues)]
+           [totallayers (length (get-state-names activestate))])
+           (return-state (get-state-names activestate) 
+           (append (take (get-state-values activestate) (- totallayers funclayers)) newvalues)))))
 
-; Restores state from active state to function state
-(define restore-state-cps
-  (lambda (activestate functionstate return)
-      (let ([binding (peek-binding functionstate)])
-           (if (empty-lis? functionstate)
-               activestate
-               (restore-state-cps activestate 
-                  (pop-binding functionstate) 
-                  (lambda (v) (return 
-                      (update-binding (car binding) (cadr binding) activestate))))))))
 
 ; Bind parameters wrapper
 (define bind-parameters
@@ -292,7 +292,7 @@
 ;   and params of the function again, this is our recusion solution
 (define make-closure
   (lambda (param-list body name state)
-    (list 'closure param-list body (add-binding name (list 'closure param-list body '*) state))))
+    (list 'closure param-list body (length (get-state-names state)))))
 
 ; Finds if a expression is a function or expression and acts accordingly
 (define evaluation
@@ -583,3 +583,8 @@
 (define replace-item-at-pos
   (lambda (pos item lis)
     (replace-item-at-pos-cps pos item lis (lambda (state pos) state))))
+
+; helper to return n layers of the state
+(define return-end-of-list
+  (lambda (n lis)
+      (list-tail lst (max 0 (- (length lst) n)))))
