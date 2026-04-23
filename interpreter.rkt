@@ -1,5 +1,5 @@
 #lang racket
-;(require "functionParser.rkt")
+(require "functionParser.rkt")
 
 
 ;;;; =======================================================================
@@ -13,7 +13,7 @@
 ; Parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename)
-    (global-statement-list filename initial-state 
+    (global-statement-list (parser filename) initial-state 
     (lambda (v) v) (lambda (v s) v) (lambda (v) v) (lambda (v) v) (lambda (v s) v))))
 
 ;;;; ---------------------------------------------------------
@@ -53,6 +53,13 @@
 (define (loop-err) (error 'loop "Break or continue used outside of loop"))
 (define (global-err) (error 'global "Invalid operation at the global layer"))
 
+(define error-value?
+  (lambda (v)
+    (or (eq? v type-err)
+        (eq? v parse-err)
+        (eq? v missing-err)
+        (eq? v unbound-err))))
+
 ; Turn #t & #f into 'true and 'false
 (define parse-bool
   (lambda (bool)
@@ -77,9 +84,9 @@
                           (lambda (s) (loop-err))
                           (lambda (s) (loop-err))
                           throw))
-           (global-statement (operator lis) state
-        (lambda (new-state) (global-statement-list (cdr lis) new-state next return break continue throw))
-          return break continue throw))))
+        (global-statement (operator lis) state
+                         (lambda (new-state) (global-statement-list (cdr lis) new-state next return break continue throw))
+                         return break continue throw))))
 
 ; Parsing global statements
 (define global-statement
@@ -163,57 +170,63 @@
 ; Throw an expression
 (define throw-excep
   (lambda (expr state next return break continue throw)
-    (throw (evaluation (operand1 expr) state next return break continue throw) state)))
+    (let ([result (evaluation (operand1 expr) state next return break continue throw)])
+      (throw (car result) (cdr result)))))
 
 ; Declare and optionally initialize a variable
 (define declare
   (lambda (expr state next return break continue throw) 
     (if (= (length expr) 2)
         (next (add-binding (operand1 expr) '* state)) ; unassigned variables default to the empty list
-        (next (add-binding (operand1 expr) (evaluation (operand2 expr) state next return break continue throw) state)))))
+        (let ([result (evaluation (operand2 expr) state next return break continue throw)])
+          (next (add-binding (operand1 expr) (car result) (cdr result)))))))
 
 ; Set a variable to a value
 (define assign
   (lambda (expr state next return break continue throw)
-    (next (update-binding (operand1 expr) (evaluation (operand2 expr) state next return break continue throw) state))))
+    (let ([result (evaluation (operand2 expr) state next return break continue throw)])
+      (next (update-binding (operand1 expr) (car result) (cdr result))))))
 
 ; Return/print the value of this statement
 (define return-statement
   (lambda (expr state next return break continue throw)
-    (let ([val (evaluation (operand1 expr) state next return break continue throw)])
-      (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
-          (return (parse-bool val) state)
-          (return val state)))))
+    (let ([result (evaluation (operand1 expr) state next return break continue throw)])
+      (let ([val (car result)] [new-state (cdr result)])
+        (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
+            (return (parse-bool val) new-state)
+            (return val new-state))))))
 
 ; Evaluate one of two statements based on a condition
 (define if-statement
   (lambda (expr state next return break continue throw)
-    (let ([condition-result (condition (operand1 expr) state next return break continue throw)])
-      (if condition-result
-          (statement (operand2 expr) state next return break continue throw) ; then
-          (if (= (length expr) 4)
-              (statement (operand3 expr) state next return break continue throw) ; else
-              (next state)))))) ; no else branch
+    (let ([result (condition (operand1 expr) state next return break continue throw)])
+      (let ([condition-result (car result)] [new-state (cdr result)])
+        (if condition-result
+            (statement (operand2 expr) new-state next return break continue throw) ; then
+            (if (= (length expr) 4)
+                (statement (operand3 expr) new-state next return break continue throw) ; else
+                (next new-state))))))) ; no else branch
 
 ; While a condition is true, iterate through a code block
 (define while
   (lambda (expr state next return break continue throw)
     (letrec
         ([loop (lambda (state)
-           (if (evaluation (operand1 expr) state next return break continue throw)
-               (statement (operand2 expr) state
-                          (lambda (s) (loop s))
-                          return
-                          (lambda (s) (next s))
-                          (lambda (s) (loop s))
-                          throw)
-              (next state)))])
+           (let ([result (evaluation (operand1 expr) state next return break continue throw)])
+             (if (car result)
+                 (statement (operand2 expr) (cdr result)
+                            (lambda (s) (loop s))
+                            return
+                            (lambda (s) (next s))
+                            (lambda (s) (loop s))
+                            throw)
+              (next (cdr result)))))])
          (loop state))))
 
 ; Getting parameters of a funciton
   (define get-params
     (lambda (closure)
-    (cadr closure)))   ; was car — skipped over 'closure tag
+    (cadr closure)))   ; was car — skipped over 'funcclosure tag
 
 ; Getting the body of a function
 (define get-body
@@ -223,9 +236,9 @@
 ; Getting the enviornment of a function
 (define get-environment
   (lambda (closure state)
-    (let ([numlayers (caddr closure)])
-    ((return-state (return-end-of-list numlayers (get-state-names state)) 
-                   (return-end-of-list numlayers (get-state-values state)))))))
+    (let ([numlayers (cadddr closure)])
+      (return-state (return-end-of-list numlayers (get-state-names state)) 
+                    (return-end-of-list numlayers (get-state-values state))))))
 
 ; Steps to call a function, establish functional next, return, break, continue, throw
 ; run the function with these
@@ -240,7 +253,7 @@
            [params      (actualparams expr)]
            [closure     (value-of-binding (lookup-binding name state))]  ; extract value from (val . idx)
            [new-state (get-environment closure state)]
-           [bound-state (bind-parameters (get-params closure) params new-state state next return break continue throw)]
+           [bound-state (bind-parameters (get-params closure) params (add-state-layer new-state) state next return break continue throw)]
            [functionnext     (lambda (s) (next (restore-state new-state s)))]
            [functionreturn   (lambda (v s) (return v (restore-state new-state s)))]
            [functionbreak    (lambda (s) (loop-err))]
@@ -249,32 +262,31 @@
       (statement-list (get-body closure) (add-state-layer bound-state) functionnext functionreturn
                       functionbreak functioncontinue functionthrow))))
 
-; Restore state - not able to get this to restore properly, but we acknowledge this should be used
-; ended up using remove-state-layer for a similar effect that worked on most tests
-
-; keep track of the number of layers we add/strip
+; Restore state after a function call.
+; Drop the function's own local layer and the parameter layer,
+; preserve updates to the captured environment layers.
 (define restore-state
   (lambda (activestate functionstate)
-    (let* ([newvalues (get-state-values functionstate)]
-           [funclayers (length newvalues)]
-           [totallayers (length (get-state-names activestate))])
-           (return-state (get-state-names activestate) 
-           (append (take (get-state-values activestate) (- totallayers funclayers)) newvalues)))))
+    (let* ([function-values (get-state-values functionstate)]
+           [restored-values (if (>= (length function-values) 2)
+                                (drop function-values 2)
+                                '())])
+      (return-state (get-state-names activestate) restored-values))))
 
 
 ; Bind parameters wrapper
 (define bind-parameters
   (lambda (formalparams actualparams new-state state next return break continue throw)
-    (bind-parameters-cps formalparams actualparams new-state state next return break continue throw)))
+    (bind-parameters-cps formalparams actualparams (add-state-layer new-state) state next return break continue throw)))
 
 ; Puts actual parameters into formal parameters
 (define bind-parameters-cps
   (lambda (formalparams actualparams new-state state next return break continue throw)
     (if (null? formalparams)
       new-state
-      (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
-                       (add-binding (car formalparams) 
-                                    (evaluation (car actualparams) state next return break continue throw) new-state) state next return break continue throw))))
+      (let ([result (evaluation (car actualparams) state next return break continue throw)])
+        (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
+                       (add-binding (car formalparams) (car result) new-state) (cdr result) next return break continue throw)))))
        
 ; Define a function
 (define function
@@ -282,85 +294,166 @@
     (let ([name (operand1 expr)]
           [formal-params (operand2 expr)]
           [body (operand3 expr)]) 
-          (next (add-binding name (make-closure formal-params body name state) state)))))
+          (next (add-binding name (make-function-closure formal-params body state) state)))))
 
-; Make a closure
+; Make a function closure
 ; A function has a closure that consists of:
 ;   (param-list body (state with function added))
 ;   (state with function added) = (param-list body *)
 ;   * indicates that this is inside iteself so you should maintain the state and call the body
 ;   and params of the function again, this is our recusion solution
-(define make-closure
-  (lambda (param-list body name state)
-    (list 'closure param-list body (length (get-state-names state)))))
+(define make-function-closure
+  (lambda (param-list body state)
+    (list 'funcclosure param-list body (length (get-state-names state)))))
+
+
 
 ; Finds if a expression is a function or expression and acts accordingly
 (define evaluation
   (lambda (expr state next return break continue throw)
     (if (and (list? expr) (eq? (car expr) 'funcall))
-        (funcall (cdr expr) state next (lambda (v s) v) break continue throw)
+        (funcall (cdr expr) state (lambda (s) (cons 'dummy s)) (lambda (v s) (cons v s)) break continue throw)
         (expression expr state next return break continue throw))))
 
 ; Evaluate a statement
 (define expression
   (lambda (expr state next return break continue throw) ; evaluate the expression as a condition and an int value
-    (let ([int-binding (int-value expr state next return break continue throw)]
-          [bool-binding (condition expr state next return break continue throw)])
-      (if (eq? int-binding type-err) ; return the binding that is valid
-          (if (eq? bool-binding type-err)
-              parse-err
-              (return-val bool-binding))
-          (return-val int-binding)))))
+    (let ([int-r (int-value expr state next return break continue throw)]
+          [bool-r (condition expr state next return break continue throw)])
+      (if (eq? (car int-r) type-err) ; return the binding that is valid
+          (if (eq? (car bool-r) type-err)
+              (cons parse-err state)
+              bool-r)
+          int-r))))
 
 ; Evaluate an arithmetic expression
 (define int-value
   (lambda (expr state next return break continue throw)
-    (cond 
-      ((number? expr) expr) ; return a number
-      ((symbol? expr) (m-int expr state)) ; return a variable representing a number
+    (cond
+      ((number? expr) (cons expr state)) ; return a number
+      ((symbol? expr) (cons (m-int expr state) state)) ; return a variable representing a number
       ((list? expr) ; evaluate an operation
-       (let ((op (operator expr)))
+       (let ([op (operator expr)])
          (cond
            ((eq? op '+)
-            (+ (evaluation (operand1 expr) state next return break continue throw)
-               (evaluation (operand2 expr) state next return break continue throw)))
+            (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+              (if (error-value? (car r1))
+                  r1
+                  (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                    (if (error-value? (car r2))
+                        r2
+                        (cons (+ (car r1) (car r2)) (cdr r2)))))))
            ((eq? op '-)
             (if (= (length expr) 2)
-                (- (evaluation (operand1 expr) state next return break continue throw)) 
-                (- (evaluation (operand1 expr) state next return break continue throw)
-                   (evaluation (operand2 expr) state next return break continue throw)))) 
+                (let ([r (evaluation (operand1 expr) state next return break continue throw)])
+                  (if (error-value? (car r))
+                      r
+                      (cons (- (car r)) (cdr r))))
+                (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+                  (if (error-value? (car r1))
+                      r1
+                      (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                        (if (error-value? (car r2))
+                            r2
+                            (cons (- (car r1) (car r2)) (cdr r2))))))))
            ((eq? op '*)
-            (* (evaluation (operand1 expr) state next return break continue throw)
-               (evaluation (operand2 expr) state next return break continue throw)))
+            (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+              (if (error-value? (car r1))
+                  r1
+                  (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                    (if (error-value? (car r2))
+                        r2
+                        (cons (* (car r1) (car r2)) (cdr r2)))))))
            ((eq? op '/)
-            (quotient (evaluation (operand1 expr) state next return break continue throw)
-                      (evaluation (operand2 expr) state next return break continue throw)))
+            (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+              (if (error-value? (car r1))
+                  r1
+                  (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                    (if (error-value? (car r2))
+                        r2
+                        (cons (quotient (car r1) (car r2)) (cdr r2)))))))
            ((eq? op '%)
-            (remainder (evaluation (operand1 expr) state next return break continue throw)
-                       (evaluation (operand2 expr) state next return break continue throw)))
-           (else type-err))))
-      (else type-err))))
-  
+            (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+              (if (error-value? (car r1))
+                  r1
+                  (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                    (if (error-value? (car r2))
+                        r2
+                        (cons (remainder (car r1) (car r2)) (cdr r2)))))))
+           (else (cons type-err state)))))
+      (else (cons type-err state)))))
+
 ; Evaluate a boolean condition
 (define condition
   (lambda (expr state next return break continue throw)
     (cond
-      ((boolean? expr) (parse-bool expr)) ; return a boolean
-      ((symbol? expr) (m-bool expr state)) ; return a variable representing a boolean
+      ((boolean? expr) (cons (parse-bool expr) state)) ; return a boolean
+      ((symbol? expr) (cons (m-bool expr state) state)) ; return a variable representing a boolean
       ((list? expr)
        (let ([op (operator expr)]) ; evaluate a condition
          (cond
-           ((eq? op '!) (not (evaluation (operand1 expr) state next return break continue throw)))
-           ((eq? op '&&)  (and (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
-           ((eq? op '||)  (or (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
-           ((eq? op '==)  (eq? (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
-           ((eq? op '!=)  (not (eq? (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw))))
-           ((eq? op '<) (< (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
-           ((eq? op '>) (> (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
-           ((eq? op '>=) (>= (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
-           ((eq? op '<=) (<= (evaluation (operand1 expr) state next return break continue throw) (evaluation (operand2 expr) state next return break continue throw)))
-           (else type-err))))
-      (else type-err))))
+           ((eq? op '!) (let ([r (evaluation (operand1 expr) state next return break continue throw)])
+                          (if (error-value? (car r))
+                              r
+                              (cons (not (car r)) (cdr r)))))
+           ((eq? op '&&) (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+                           (if (error-value? (car r1))
+                               r1
+                               (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                                 (if (error-value? (car r2))
+                                     r2
+                                     (cons (and (car r1) (car r2)) (cdr r2)))))))
+           ((eq? op '||) (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+                           (if (error-value? (car r1))
+                               r1
+                               (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                                 (if (error-value? (car r2))
+                                     r2
+                                     (cons (or (car r1) (car r2)) (cdr r2)))))))
+           ((eq? op '==) (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+                           (if (error-value? (car r1))
+                               r1
+                               (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                                 (if (error-value? (car r2))
+                                     r2
+                                     (cons (eq? (car r1) (car r2)) (cdr r2)))))))
+           ((eq? op '!=) (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+                           (if (error-value? (car r1))
+                               r1
+                               (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                                 (if (error-value? (car r2))
+                                     r2
+                                     (cons (not (eq? (car r1) (car r2))) (cdr r2)))))))
+           ((eq? op '<) (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+                          (if (error-value? (car r1))
+                              r1
+                              (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                                (if (error-value? (car r2))
+                                    r2
+                                    (cons (< (car r1) (car r2)) (cdr r2)))))))
+           ((eq? op '>) (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+                          (if (error-value? (car r1))
+                              r1
+                              (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                                (if (error-value? (car r2))
+                                    r2
+                                    (cons (> (car r1) (car r2)) (cdr r2)))))))
+           ((eq? op '>=) (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+                           (if (error-value? (car r1))
+                               r1
+                               (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                                 (if (error-value? (car r2))
+                                     r2
+                                     (cons (>= (car r1) (car r2)) (cdr r2)))))))
+           ((eq? op '<=) (let ([r1 (evaluation (operand1 expr) state next return break continue throw)])
+                           (if (error-value? (car r1))
+                               r1
+                               (let ([r2 (evaluation (operand2 expr) (cdr r1) next return break continue throw)])
+                                 (if (error-value? (car r2))
+                                     r2
+                                     (cons (<= (car r1) (car r2)) (cdr r2)))))))
+           (else (cons type-err state)))))
+      (else (cons type-err state)))))
 
 ;;;; ---------------------------------------------------------
 ;;;; MAPPINGS
@@ -483,7 +576,7 @@
   (lambda (x)
     (and (list? x)
          (= (length x) 4)
-         (eq? 'closure (car x)))))
+         (eq? 'funcclosure (car x)))))
 
 ; Predicate: is this list a scope-level sublist (not a closure value)?
 (define scope-list?
@@ -587,4 +680,4 @@
 ; helper to return n layers of the state
 (define return-end-of-list
   (lambda (n lis)
-      (list-tail lst (max 0 (- (length lst) n)))))
+      (list-tail lis (max 0 (- (length lis) n)))))
