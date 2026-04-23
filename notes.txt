@@ -1,0 +1,14 @@
+11 fail with error
+
+test 14 should return 69, returns 0
+
+test 15 should return 87, returns -13
+
+test 16 contract violations
+
+test 19 returns 220, should return 100 - probably running finally block twice - not as important unless M_value is tail recursive
+- x = x + divide(5, 0); - does not throw the error, should have the continuations to get the error and throw
+Need to handle expression being thrown in the middle of expression to fix this (tail recursion)
+- Test 13 needs this
+
+test 20 fails with contract violation
