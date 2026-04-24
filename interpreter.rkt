@@ -1,5 +1,5 @@
 #lang racket
-;(require "classParser.rkt")
+(require "classParser.rkt")
 
 
 ;;;; =======================================================================
@@ -13,7 +13,7 @@
 ; Parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename class-name)
-    (class-list filename class-name initial-state 
+    (class-list (parser filename) class-name initial-state 
     (lambda (v) v) (lambda (v s) v) (lambda (v) v) (lambda (v) v) (lambda (v s) v))))
 
 ;;;; ---------------------------------------------------------
@@ -77,10 +77,8 @@
       (let* ([class-closure (value-of-binding (lookup-binding class-name state))]
              [methods (get-methods class-closure)]
              [mainpos (return-pos-of-item 'main (car methods))]
-             [mainfunc (return-item-at-pos mainpos (cadr methods))]
-             [new-state (get-environment mainfunc state)]
-             [bound-state (bind-parameters (get-params mainfunc) '() new-state state next return break continue throw)])
-             (statement-list (get-body mainfunc) bound-state
+             [mainfunc (return-item-at-pos mainpos (cadr methods))])
+             (statement-list (get-body mainfunc) state
               (lambda (s) (next s))
               (lambda (v s) (return v s))
               (lambda (s) (loop-err))
@@ -209,10 +207,15 @@
 (define return-statement
   (lambda (expr state next return break continue throw)
     (let ([result (evaluation (operand1 expr) state next return break continue throw)])
-      (let ([val (car result)] [new-state (cdr result)])
+      
+      (if (pair? result)
+        (let ([val (car result)] [new-state (cdr result)])
         (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
             (return (parse-bool val) new-state)
-            (return val new-state))))))
+            (return val new-state)))
+        (if (boolean? result)
+            (return (parse-bool result) state)
+            (return result state))))))
 
 ; Evaluate one of two statements based on a condition
 (define if-statement
@@ -377,7 +380,7 @@
   (lambda (lis)
     (cond
     ((null? lis) lis)
-    ((or (eq? 'function (car (car lis))) (eq? 'static-function (car (car lis)))) (cons (car lis) (generate-method-names-list (cdr lis))))
+    ((or (eq? 'function (car (car lis))) (eq? 'static-function (car (car lis)))) (cons (cadr (car lis)) (generate-method-names-list (cdr lis))))
     (else (generate-method-names-list (cdr lis))))))
 
 ; Finds if a expression is a function or expression and acts accordingly
@@ -399,7 +402,8 @@
           (return-val int-binding)))))
 
 ; Evaluate an arithmetic expression(define int-value
-  (lambda (expr state next return break continue throw)
+(define int-value
+(lambda (expr state next return break continue throw)
     (cond 
       ((number? expr) expr) ; return a number
       ((symbol? expr) (m-int expr state)) ; return a variable representing a number
@@ -566,9 +570,15 @@
 ; Recognizes a closure by its 4-element structure: (name (params) (body) (env))
 (define closure?
   (lambda (x)
-    (and (list? x)
+    (or (and (list? x)
          (= (length x) 4)
-         (eq? 'funcclosure (car x)))))
+         (eq? 'funcclosure (car x)))
+        (and (list? x)
+             (= (length x) 5)
+             (eq? 'classclosure (car x)))
+        (and (list? x)
+             (= (length x) 3)
+             (eq? 'instanceclosure (car x))))))
 
 ; Predicate: is this list a scope-level sublist (not a closure value)?
 (define scope-list?
