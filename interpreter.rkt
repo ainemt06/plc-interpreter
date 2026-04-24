@@ -13,7 +13,7 @@
 ; Parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename)
-    (global-statement-list (parser filename) initial-state 
+    (class-list (parser filename) class-name initial-state 
     (lambda (v) v) (lambda (v s) v) (lambda (v) v) (lambda (v) v) (lambda (v s) v))))
 
 ;;;; ---------------------------------------------------------
@@ -70,6 +70,24 @@
 ;;;; ---------------------------------------------------------
 ;;;; DENOTATIONAL SEMANTICS/M_STATE FUNCTIONS
 ;;;; ---------------------------------------------------------
+
+(define class-list
+  (lambda (lis class-name state next return break continue throw)
+    (if (null? lis)
+      (let* ([class-closure (value-of-binding (lookup-binding class-name state))]
+             [methods (get-methods class-closure)]
+             [mainpos (return-pos-of-item (car methods))]
+             [mainfunc (return-item-at-pos mainpos (cadr methods))]
+             [new-state (get-environment mainfunc state)]
+             [bound-state (bind-parameters (get-params mainfunc) '() new-state state next return break continue throw)])
+             (statement-list (get-body mainfunc) bound-state
+              (lambda (s) (next s))
+              (lambda (v s) (return v s))
+              (lambda (s) (loop-err))
+              (lambda (s) (loop-err))
+              throw))
+    (class (operator lis) state (lambda (new-state) class-list (cdr lis) new-state next return break continue throw)
+    return break continue throw))))
 
 ; Evaluates the global statements in the program
 (define global-statement-list
@@ -296,6 +314,13 @@
           [body (operand3 expr)]) 
           (next (add-binding name (make-function-closure formal-params body state) state)))))
 
+(define class
+  (lambda (expr state next return break continue throw)
+    (let ([name (operand1 expr)]
+          [superclass (operand2 expr)]
+          [body (operand3 expr)]) 
+          (next (add-binding name (make-class-closure superclass body state) state)))))
+
 ; Make a function closure
 ; A function has a closure that consists of:
 ;   (param-list body (state with function added))
@@ -337,7 +362,7 @@
 (define get-instance-fields
   (lambda (instance)
     (caddr instance)))
-    
+
 (define get-field-at-pos
   (lambda (instance n)
   (list-ref (caddr instance) n)))
