@@ -12,7 +12,7 @@
 
 ; Parse a file, then interpret it with the initial state
 (define interpret
-  (lambda (filename)
+  (lambda (filename class-name)
     (class-list (parser filename) class-name initial-state 
     (lambda (v) v) (lambda (v s) v) (lambda (v) v) (lambda (v) v) (lambda (v s) v))))
 
@@ -336,9 +336,8 @@
 
 (define make-class-closure
   (lambda (super body state)
-    (let ([closurelist (map (lambda (f) (make-unparsed-function-closure f state)))]) 
-    ((list 'classclosure (cadr super) (generate-fields-list body) (generate-method-names-list body) closurelist)))))
-
+    (let ([closurelist (map (lambda (f) (make-unparsed-function-closure f state)) body)]) 
+    (list 'classclosure super (generate-fields-list body) (generate-method-names-list body) closurelist))))
 (define get-superclass
   (lambda (classclosure)
     (cadr classclosure)))
@@ -352,8 +351,8 @@
     (cdddr classclosure)))
 
 (define make-instance-closure
-  (lambda (class fields)
-    (list 'instanceclosure class fields)))
+  (lambda (classname fields)
+    (list 'instanceclosure classname fields)))
 
 (define get-class
   (lambda (instance)
@@ -371,14 +370,14 @@
   (lambda (lis)
     (cond
       ((null? lis) lis)
-      ((eq? 'var (car (car) lis)) (cons (car lis) (generate-fields-list (cdr lis))))
+      ((eq? 'var (car (car lis))) (cons (car lis) (generate-fields-list (cdr lis))))
       (else (generate-fields-list (cdr lis))))))
 
 (define generate-method-names-list
   (lambda (lis)
     (cond
     ((null? lis) lis)
-    ((eq? 'function (car (car) lis)) (cons (car lis) (generate-method-names-list (cdr lis))))
+    ((eq? 'function (car (car lis))) (cons (car lis) (generate-method-names-list (cdr lis))))
     (else (generate-method-names-list (cdr lis))))))
 
 ; Finds if a expression is a function or expression and acts accordingly
