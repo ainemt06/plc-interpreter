@@ -1,5 +1,5 @@
 #lang racket
-(require "functionParser.rkt")
+(require "classParser.rkt")
 
 
 ;;;; =======================================================================
@@ -305,8 +305,56 @@
 (define make-function-closure
   (lambda (param-list body state)
     (list 'funcclosure param-list body (length (get-state-names state)))))
+(define make-unparsed-function-closure
+  (lambda (lis state)
+    (make-function-closure (operand2 lis) (operand3 lis) state)))
 
+(define make-class-closure
+  (lambda (super body state)
+    (let ([closurelist (map (lambda (f) (make-unparsed-function-closure f state)))]) 
+    ((list 'classclosure (cadr super) (generate-fields-list body) (generate-method-names-list body) closurelist)))))
 
+(define get-superclass
+  (lambda (classclosure)
+    (cadr classclosure)))
+
+(define get-fields
+  (lambda (classclosure)
+    (caddr classclosure)))
+
+(define get-methods
+  (lambda (classclosure)
+    (cdddr classclosure)))
+
+(define make-instance-closure
+  (lambda (class fields)
+    (list 'instanceclosure class fields)))
+
+(define get-class
+  (lambda (instance)
+    (cadr instance)))
+
+(define get-instance-fields
+  (lambda (instance)
+    (caddr instance)))
+    
+(define get-field-at-pos
+  (lambda (instance n)
+  (list-ref (caddr instance) n)))
+
+(define generate-fields-list
+  (lambda (lis)
+    (cond
+      ((null? lis) lis)
+      ((eq? 'var (car (car) lis)) (cons (car lis) (generate-fields-list (cdr lis))))
+      (else (generate-fields-list (cdr lis))))))
+
+(define generate-method-names-list
+  (lambda (lis)
+    (cond
+    ((null? lis) lis)
+    ((eq? 'function (car (car) lis)) (cons (car lis) (generate-method-names-list (cdr lis))))
+    (else (generate-method-names-list (cdr lis))))))
 
 ; Finds if a expression is a function or expression and acts accordingly
 (define evaluation
