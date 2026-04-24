@@ -322,24 +322,26 @@
     (let ([name (operand1 expr)]
           [superclass (operand2 expr)]
           [body (operand3 expr)]) 
-          (next (add-binding name (make-class-closure superclass body state) state)))))
+          (next (add-binding name (make-class-closure superclass body state name) state))))) ; pass in name for lookup of this in functions
 
 ; Make a function closure
 ; A function has a closure that consists of:
-;   (param-list body (state with function added))
-;   (state with function added) = (param-list body *)
-;   * indicates that this is inside iteself so you should maintain the state and call the body
-;   and params of the function again, this is our recusion solution
+;   (param-list body layers-deep-for-state-lookup class-name)
+;class name is passed along and stored plainly for ease of lookup
+; layers is a number for get-enviornment to use
+; add this to param-list by cons
 (define make-function-closure
-  (lambda (param-list body state)
-    (list 'funcclosure param-list body (length (get-state-names state)))))
+  (lambda (param-list body state class-name)
+    (list 'funcclosure (append param-list (list 'this)) body (length (get-state-names state)) class-name)))
+
 (define make-unparsed-function-closure
-  (lambda (lis state)
-    (make-function-closure (operand2 lis) (operand3 lis) state)))
+  (lambda (lis state class-name) ; pass along class name for lookup
+    (make-function-closure (operand2 lis) (operand3 lis) state class-name)))
+
 
 (define make-class-closure
-  (lambda (super body state)
-    (let ([closurelist (map (lambda (f) (make-unparsed-function-closure f state)) body)]) 
+  (lambda (super body state class-name)
+    (let ([closurelist (map (lambda (f) (make-unparsed-function-closure f state class-name)) body)]) ; pass along classname for lookup 
     (list 'classclosure super (generate-fields-list body) (generate-method-names-list body) closurelist))))
 (define get-superclass
   (lambda (classclosure)
