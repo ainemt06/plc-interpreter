@@ -201,7 +201,13 @@
 (define assign
   (lambda (expr state type next return break continue throw)
     (let ([result (evaluation (operand2 expr) state type next return break continue throw)])
-      (next (update-binding (operand1 expr) (car result) (cdr result))))))
+      (cond
+        ((and (list? (operand1 expr)) (eq? 'dot (car (operand1 expr))))
+         (next (update-dot (operand1 expr) (car result) (cdr result))))
+        ((not (eq? (car (lookup-binding 'this state)) missing-err))
+         (next (update-dot (list 'dot 'this (operand1 expr)) (car result) (cdr result))))
+        (else
+         (next (update-binding (operand1 expr) (car result) (cdr result))))))))
 
 ; Return/print the value of this statement
 (define return-statement
@@ -411,6 +417,55 @@
   (lambda (instance n)
   (list-ref (caddr instance) n)))
 
+(define lookup-field
+  (lambda (instance field-name state)
+    (if (instance-closure? instance)
+        (let* ([classname (get-class instance)]
+               [class-closure (value-of-binding (lookup-binding classname state))]
+               [field-list (get-fields class-closure)]
+               [field-names (map (lambda (f) (if (eq? 'var (car f)) (cadr f) #f)) field-list)]
+               [pos (return-pos-of-item field-name field-names)])
+          (if (eq? pos missing-err)
+              missing-err
+              (return-item-at-pos pos (get-instance-fields instance))))
+        missing-err)))
+
+(define update-field
+  (lambda (instance field-name newval state)
+    (if (instance-closure? instance)
+        (let* ([classname (get-class instance)]
+               [class-closure (value-of-binding (lookup-binding classname state))]
+               [field-list (get-fields class-closure)]
+               [field-names (map (lambda (f) (if (eq? 'var (car f)) (cadr f) #f)) field-list)]
+               [pos (return-pos-of-item field-name field-names)])
+          (if (eq? pos missing-err)
+              instance
+              (let ([updated-fields (replace-item-at-pos pos newval (get-instance-fields instance))])
+                (make-instance-closure classname updated-fields))))
+        instance)))
+
+(define evaluate-dot
+  (lambda (dot-expr state)
+    (let* ([receiver-expr (cadr dot-expr)]
+           [field-name (caddr dot-expr)]
+           [receiver (if (symbol? receiver-expr)
+                         (value-of-binding (lookup-binding receiver-expr state))
+                         (evaluate-dot receiver-expr state))])
+      (lookup-field receiver field-name state))))
+
+(define update-dot
+  (lambda (dot-expr newval state)
+    (let* ([receiver-expr (cadr dot-expr)]
+           [field-name (caddr dot-expr)])
+      (if (symbol? receiver-expr)
+          (let* ([receiver (value-of-binding (lookup-binding receiver-expr state))]
+                 [updated-receiver (update-field receiver field-name newval state)])
+            (update-binding receiver-expr updated-receiver state))
+          (let* ([inner-state (update-dot receiver-expr newval state)]
+                 [receiver (value-of-binding (lookup-binding receiver-expr inner-state))]
+                 [updated-receiver (update-field receiver field-name newval inner-state)])
+            (update-binding receiver-expr updated-receiver inner-state))))))
+
 (define generate-fields-list
   (lambda (lis)
     (cond
@@ -500,12 +555,16 @@
 ; Evaluates the integer value of a mapping
 (define m-int
   (lambda (atom state)
-    (if (number? atom) 
-        atom ; return a literal number
-        (let ([val (value-of-binding (lookup-binding atom state))]) 
-          (if (number? val) ; check if this var is mapped to an int
-              val 
-              type-err)))))   
+    (cond
+      ((number? atom) atom) ; return a literal number
+      ((and (list? atom) (eq? 'dot (car atom))) (evaluate-dot atom state))
+      ((symbol? atom)
+       (let ([this-binding (lookup-binding 'this state)])
+         (if (not (eq? (car this-binding) missing-err))
+             (evaluate-dot (list 'dot 'this atom) state)
+             (let ([val (value-of-binding (lookup-binding atom state))])
+               (if (number? val) val type-err)))))
+      (else type-err))))   
 
 ; Evaluates the boolean value of a mapping
 (define m-bool
@@ -514,6 +573,13 @@
       ((boolean? atom) atom)
       ((eq? 'false atom) #f)
       ((eq? 'true atom) #t) ; return a literal boolean
+      ((and (list? atom) (eq? 'dot (car atom))) (evaluate-dot atom state))
+      ((symbol? atom)
+       (let ([this-binding (lookup-binding 'this state)])
+         (if (not (eq? (car this-binding) missing-err))
+             (evaluate-dot (list 'dot 'this atom) state)
+             (let ([val (value-of-binding (lookup-binding atom state))])
+               (if (boolean? val) val type-err)))))
       (else (let ([val (value-of-binding (lookup-binding atom state))])
               (if (boolean? val) ; check if this var is mapped to a boolean
                   val
