@@ -1,5 +1,5 @@
 #lang racket
-;(require "classParser.rkt")
+(require "classParser.rkt")
 
 
 ;;;; =======================================================================
@@ -13,7 +13,7 @@
 ; Parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename class-name)
-    (class-list filename class-name initial-state
+    (class-list (parser filename) class-name initial-state
     (lambda (v) v) (lambda (v s) v) (lambda (v) v) (lambda (v) v) (lambda (v s) v))))
 
 ;;;; ---------------------------------------------------------
@@ -318,7 +318,13 @@
                                  #f)]
            [new-state     (get-environment closure state)]
            [bound-state   (bind-parameters (get-params closure) actual-params (add-state-layer new-state) state type next return break continue throw closure-class)]
-           [functionnext     (lambda (s) (next (restore-state new-state s)))]
+           [functionnext     (lambda (s)
+                               (let* ([restored (restore-state new-state s)]
+                                      [final-state (if (and is-method? (symbol? receiver-expr))
+                                                       (let ([updated-this (value-of-binding (lookup-binding 'this s))])
+                                                         (update-binding receiver-expr updated-this restored))
+                                                       restored)])
+                                 (next final-state)))]
            [functionreturn   (lambda (v s) (return v (restore-state new-state s)))]
            [functionbreak    (lambda (s) (loop-err))]
            [functioncontinue (lambda (s) (loop-err))]
