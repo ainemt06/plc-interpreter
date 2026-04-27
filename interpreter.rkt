@@ -299,9 +299,10 @@
            [receiver-expr (if is-method? (cadr name) #f)]
            [method-name   (if is-method? (caddr name) name)]
            [receiver-val  (if is-method?
-                             (if (symbol? receiver-expr)
-                                 (car (lookup-binding receiver-expr state))
-                                 (evaluation receiver-expr state type next return break continue throw))
+                              (cond
+                                ((symbol? receiver-expr) (car (lookup-binding receiver-expr state)))
+                                ((eq? (car receiver-expr) 'new) (car (evaluation receiver-expr state type next return break continue throw)))
+                                 (else (evaluation receiver-expr state type next return break continue throw)))
                              #f)]
            [class-closure  (if is-method?
                               (if (instance-closure? receiver-val)
@@ -463,7 +464,9 @@
 ;; so no extraction needed - return as-is
 (define extract-instance
   (lambda (val)
-    val))
+    (if (list? (car val))
+        (car val)
+        val)))
 
 ;; Field values are always stored in the same order as field declarations in the class
 ;; This enables compile-time type checking via index-based lookups
@@ -514,14 +517,18 @@
         instance)))
 
 (define evaluate-dot
-  (lambda (dot-expr state)
+  (lambda (dot-expr state type next return break continue throw)
     (let* ([receiver-expr (cadr dot-expr)]
            [field-name (caddr dot-expr)]
-           [raw-receiver (if (symbol? receiver-expr)
-                             (value-of-binding (lookup-binding receiver-expr state))
-                             (evaluate-dot receiver-expr state))]
+           [raw-receiver (cond
+                           ((symbol? receiver-expr) (value-of-binding (lookup-binding receiver-expr state)))
+                                                    ((eq? (car receiver-expr) 'new) (new (cdr receiver-expr) state type next return break continue throw))
+                                                    ((eq? (car receiver-expr) 'dot) (evaluate-dot receiver-expr state type next return break continue throw))
+                                                    (else (evaluation receiver-expr state type next return break continue throw)))]
            [receiver (extract-instance raw-receiver)])
       (lookup-field receiver field-name state))))
+
+
 
 (define update-dot
   (lambda (dot-expr newval state)
@@ -559,7 +566,7 @@
           ((not (list? expr)) (expression expr state type next return break continue throw))
           ((eq? (car expr) 'funcall) (funcall (cdr expr) state type next (lambda (v s) v) break continue throw))
           ((eq? (car expr) 'new) (new (cdr expr) state type next (lambda (v s) v) break continue throw))
-          ((eq? (car expr) 'dot) (evaluate-dot expr state))
+          ((eq? (car expr) 'dot) (evaluate-dot expr state type next return break continue throw))
           ((eq? (car expr) 'instanceclosure) (return-val expr))
           (else (expression expr state type next return break continue throw)))))
        
@@ -581,7 +588,7 @@
 (lambda (expr state type next return break continue throw)
     (cond 
       ((number? expr) expr) ; return a number
-      ((symbol? expr) (m-int expr state)) ; return a variable representing a number
+      ((symbol? expr) (m-int expr state type next return break continue throw)) ; return a variable representing a number
       ((list? expr) ; evaluate an operation
        (let ((op (operator expr)))
          (cond
@@ -610,7 +617,7 @@
   (lambda (expr state type next return break continue throw)
     (cond
       ((boolean? expr) (parse-bool expr)) ; return a boolean
-      ((symbol? expr) (m-bool expr state)) ; return a variable representing a boolean
+      ((symbol? expr) (m-bool expr state type next return break continue throw)) ; return a variable representing a boolean
       ((list? expr)
        (let ([op (operator expr)]) ; evaluate a condition
          (cond
@@ -632,35 +639,35 @@
 
 ; Evaluates the integer value of a mapping
 (define m-int
-  (lambda (atom state)
+  (lambda (atom state type next return break continue throw)
     (cond
       ((number? atom) atom) ; return a literal number
-      ((and (list? atom) (eq? 'dot (car atom))) (evaluate-dot atom state))
+      ((and (list? atom) (eq? 'dot (car atom))) (evaluate-dot atom state type next return break continue throw))
       ((symbol? atom)
        (let ([val (value-of-binding (lookup-binding atom state))])
          (if (number? val)
              val
              (let ([this-binding (lookup-binding 'this state)])
                (if (not (eq? (car this-binding) missing-err))
-                   (evaluate-dot (list 'dot 'this atom) state)
+                   (evaluate-dot (list 'dot 'this atom) state type next return break continue throw)
                    type-err)))))
       (else type-err))))   
 
 ; Evaluates the boolean value of a mapping
 (define m-bool
-  (lambda (atom state)
+  (lambda (atom state type next return break continue throw)
     (cond
       ((boolean? atom) atom)
       ((eq? 'false atom) #f)
       ((eq? 'true atom) #t) ; return a literal boolean
-      ((and (list? atom) (eq? 'dot (car atom))) (evaluate-dot atom state))
+      ((and (list? atom) (eq? 'dot (car atom))) (evaluate-dot atom state type next return break continue throw))
       ((symbol? atom)
        (let ([val (value-of-binding (lookup-binding atom state))])
          (if (boolean? val)
              val
              (let ([this-binding (lookup-binding 'this state)])
                (if (not (eq? (car this-binding) missing-err))
-                   (evaluate-dot (list 'dot 'this atom) state)
+                   (evaluate-dot (list 'dot 'this atom) state type next return break continue throw)
                    type-err)))))
       (else type-err))))
 
