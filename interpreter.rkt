@@ -217,15 +217,14 @@
 (define return-statement
   (lambda (expr state type next return break continue throw)
     (let ([result (evaluation (operand1 expr) state type next return break continue throw)])
-      
       (if (pair? result)
-        (let ([val (car result)] [new-state (cdr result)])
-        (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
-            (return (parse-bool val) new-state)
-            (return val new-state)))
-        (if (boolean? result)
-            (return (parse-bool result) state)
-            (return result state))))))
+          (let ([val (car result)] [new-state (cdr result)])
+            (if (boolean? val) ; if the value is a boolean, prettify it with parse-bool
+                (return (parse-bool val) new-state)
+                (return val new-state)))
+          (if (boolean? result)
+              (return (parse-bool result) state)
+              (return result state))))))
 
 ; Evaluate one of two statements based on a condition
 (define if-statement
@@ -362,7 +361,7 @@
                                   (car result))
                                result)])
         (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
-                       (add-binding param-name param-value new-state) result type next return break continue throw closure-class)))))
+                       (add-binding param-name param-value new-state) state type next return break continue throw closure-class)))))
        
 ; Define a function
 (define function
