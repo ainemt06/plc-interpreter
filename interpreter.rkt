@@ -146,7 +146,7 @@
         ((eq? op 'try) (try expr state type next return break continue throw))
         ((eq? op 'throw) (throw-excep expr state type next return break continue throw))
         ((eq? op 'function) (function expr state type next return break continue throw))
-        ((eq? op 'funcall) (funcall (cdr expr) state (lambda (s) (next s)) (lambda (v s) (next s)) break continue throw))
+        ((eq? op 'funcall) (funcall (cdr expr) state type (lambda (s) (next s)) (lambda (v s) (next s)) break continue throw))
         ((eq? op 'new) (new (cdr expr) state type next return break continue throw))
         ((eq? op 'break) (break state))
         ((eq? op 'continue) (continue state))
@@ -202,17 +202,16 @@
 (define assign
   (lambda (expr state type next return break continue throw)
     (let ([result (evaluation (operand2 expr) state type next return break continue throw)])
-      (let* ([var-name (operand1 expr)]
-             [local-binding (lookup-binding var-name state)])
+      (let ([var-name (operand1 expr)])
         (cond
           ((and (list? var-name) (eq? 'dot (car var-name)))
-           (next (update-dot var-name (car result) (cdr result))))
-          ((not (eq? (car local-binding) missing-err))
-           (next (update-binding var-name (car result) (cdr result))))
+           (next (update-dot var-name result state)))
+          ((not (eq? (car (lookup-binding var-name state)) missing-err))
+           (next (update-binding var-name result state)))
           ((not (eq? (car (lookup-binding 'this state)) missing-err))
-           (next (update-dot (list 'dot 'this var-name) (car result) (cdr result))))
+           (next (update-dot (list 'dot 'this var-name) result state)))
           (else
-           (next (update-binding var-name (car result) (cdr result)))))))))
+           (next (update-binding var-name result state))))))))
 
 ; Return/print the value of this statement
 (define return-statement
@@ -319,7 +318,13 @@
                                  #f)]
            [new-state     (get-environment closure state)]
            [bound-state   (bind-parameters (get-params closure) actual-params (add-state-layer new-state) state type next return break continue throw closure-class)]
-           [functionnext     (lambda (s) (next (restore-state new-state s)))]
+           [functionnext     (lambda (s)
+                               (let* ([restored (restore-state new-state s)]
+                                      [final-state (if (and is-method? (symbol? receiver-expr))
+                                                       (let ([updated-this (value-of-binding (lookup-binding 'this s))])
+                                                         (update-binding receiver-expr updated-this restored))
+                                                       restored)])
+                                 (next final-state)))]
            [functionreturn   (lambda (v s) (return v (restore-state new-state s)))]
            [functionbreak    (lambda (s) (loop-err))]
            [functioncontinue (lambda (s) (loop-err))]
@@ -352,7 +357,9 @@
       (let* ([param-name (car formalparams)]
              [result (evaluation (car actualparams) state type next return break continue throw)]
              [param-value (if (eq? param-name 'this)
-                              (if closure-class (list 'this-bind (car result) closure-class) (car result))
+                              (if closure-class 
+                                  (list 'instanceclosure (get-class result) (get-instance-fields result))
+                                  (car result))
                                result)])
         (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
                        (add-binding param-name param-value new-state) result type next return break continue throw closure-class)))))
@@ -452,6 +459,13 @@
   (lambda (instance)
     (caddr instance)))
 
+;; Extract the actual instance closure from a potential this-bind wrapper
+;; Both instanceclosure and this-bind have structure (tag classname fields)
+;; so no extraction needed - return as-is
+(define extract-instance
+  (lambda (val)
+    val))
+
 ;; Field values are always stored in the same order as field declarations in the class
 ;; This enables compile-time type checking via index-based lookups
 (define get-field-at-pos
@@ -504,9 +518,10 @@
   (lambda (dot-expr state)
     (let* ([receiver-expr (cadr dot-expr)]
            [field-name (caddr dot-expr)]
-           [receiver (if (symbol? receiver-expr)
-                         (value-of-binding (lookup-binding receiver-expr state))
-                         (evaluate-dot receiver-expr state))])
+           [raw-receiver (if (symbol? receiver-expr)
+                             (value-of-binding (lookup-binding receiver-expr state))
+                             (evaluate-dot receiver-expr state))]
+           [receiver (extract-instance raw-receiver)])
       (lookup-field receiver field-name state))))
 
 (define update-dot
@@ -514,11 +529,13 @@
     (let* ([receiver-expr (cadr dot-expr)]
            [field-name (caddr dot-expr)])
       (if (symbol? receiver-expr)
-          (let* ([receiver (value-of-binding (lookup-binding receiver-expr state))]
+          (let* ([raw-receiver (value-of-binding (lookup-binding receiver-expr state))]
+                 [receiver (extract-instance raw-receiver)]
                  [updated-receiver (update-field receiver field-name newval state)])
             (update-binding receiver-expr updated-receiver state))
           (let* ([inner-state (update-dot receiver-expr newval state)]
-                 [receiver (value-of-binding (lookup-binding receiver-expr inner-state))]
+                 [raw-receiver (value-of-binding (lookup-binding receiver-expr inner-state))]
+                 [receiver (extract-instance raw-receiver)]
                  [updated-receiver (update-field receiver field-name newval inner-state)])
             (update-binding receiver-expr updated-receiver inner-state))))))
 
@@ -551,13 +568,14 @@
 ; evaluate a statement
 (define expression
   (lambda (expr state type next return break continue throw) ; evaluate the expression as a condition and an int value
-    (let ([int-binding (int-value expr state type next return break continue throw)]
+    (let ([object-binding (value-of-binding (lookup-binding expr state))]
+          [int-binding (int-value expr state type next return break continue throw)]
           [bool-binding (condition expr state type next return break continue throw)])
-      (if (eq? int-binding type-err) ; return the binding that is valid
-          (if (eq? bool-binding type-err)
-              parse-err
-              (return-val bool-binding))
-          (return-val int-binding)))))
+      (cond
+         ((not (error-value? object-binding)) (return-val object-binding))
+         ((not (error-value? int-binding)) (return-val int-binding))
+         ((not (error-value? bool-binding)) (return-val bool-binding))
+         (else (parse-err))))))
 
 ; Evaluate an arithmetic expression
 (define int-value
@@ -748,10 +766,7 @@
              (eq? 'classclosure (car x)))
         (and (list? x)
              (= (length x) 3)
-             (eq? 'instanceclosure (car x)))
-        (and (list? x)
-             (= (length x) 3)
-             (eq? 'this-bind (car x))))))
+             (eq? 'instanceclosure (car x))))))
 
 ; Predicate: is this list a scope-level sublist (not a closure value)?
 (define scope-list?
@@ -855,4 +870,4 @@
 ; helper to return n layers of the state
 (define return-end-of-list
   (lambda (n lis)
-      (list-tail lis (max 0 (- (length lis) n)))))
+      (list-tail lis (max 0 (- n 1)))))
