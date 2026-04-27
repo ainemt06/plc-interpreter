@@ -13,7 +13,7 @@
 ; Parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename class-name)
-    (class-list (parser filename) class-name initial-state 
+    (class-list (parser filename) class-name initial-state
     (lambda (v) v) (lambda (v s) v) (lambda (v) v) (lambda (v) v) (lambda (v s) v))))
 
 ;;;; ---------------------------------------------------------
@@ -78,13 +78,13 @@
              [methods (get-methods class-closure)]
              [mainpos (return-pos-of-item 'main (car methods))]
              [mainfunc (return-item-at-pos mainpos (cadr methods))])
-             (statement-list (get-body mainfunc) state
+        (statement-list (get-body mainfunc) state class-name
               (lambda (s) (next s))
               (lambda (v s) (return v s))
               (lambda (s) (loop-err))
               (lambda (s) (loop-err))
               throw))
-    (class (operator lis) state (lambda (new-state) (class-list (cdr lis) class-name new-state next return break continue throw))
+    (class (operator lis) state class-name (lambda (new-state) (class-list (cdr lis) class-name new-state next return break continue throw))
     return break continue throw))))
 
 ; Evaluates the global statements in the program
@@ -125,11 +125,11 @@
 
 ; recurse through a list of statements and update the state with each one
 (define statement-list
-  (lambda (lis state next return break continue throw)
+  (lambda (lis state type next return break continue throw)
     (if (null? lis) 
         (next state) ; return the final state
-        (statement (operator lis) state 
-                   (lambda (new-state) (statement-list (cdr lis) new-state next return break continue throw)) ; continue through the statements
+        (statement (operator lis) state type
+                   (lambda (new-state) (statement-list (cdr lis) new-state type next return break continue throw)) ; continue through the statements
                    return break continue throw))))
 
 ; Parse out the type of a statement and evaluate it (basically our M_state)
@@ -147,6 +147,7 @@
         ((eq? op 'throw) (throw-excep expr state type next return break continue throw))
         ((eq? op 'function) (function expr state type next return break continue throw))
         ((eq? op 'funcall) (funcall (cdr expr) state (lambda (s) (next s)) (lambda (v s) (next s)) break continue throw))
+        ((eq? op 'new) (new (cdr expr) state type next return break continue throw))
         ((eq? op 'break) (break state))
         ((eq? op 'continue) (continue state))
         (else type-err)))))
@@ -250,6 +251,20 @@
               (next (cdr result)))))])
          (loop state))))
 
+;; Handle new expression: create an instance with initialized fields
+(define new
+  (lambda (expr state type next return break continue throw)
+    (let* ([classname (operator expr)]
+           [class-closure (value-of-binding (lookup-binding classname state))]
+           [field-list (get-fields class-closure)]
+           [initialized-fields 
+            (map (lambda (field-var)
+                   (if (>= (length field-var) 3)
+                       (caddr field-var)  ; grab the initializer value
+                       0))                 ; default to 0 if no initializer
+                 field-list)])
+      (cons (make-instance-closure classname initialized-fields) state))))
+
 ; Getting parameters of a funciton
   (define get-params
     (lambda (closure)
@@ -296,13 +311,13 @@
                              (value-of-binding (lookup-binding name state)))]
            [actual-params (if is-method? (append params (list receiver-val)) params)]
            [new-state     (get-environment closure state)]
-           [bound-state   (bind-parameters (get-params closure) actual-params (add-state-layer new-state) state next return break continue throw)]
+           [bound-state   (bind-parameters (get-params closure) actual-params (add-state-layer new-state) state type next return break continue throw)]
            [functionnext     (lambda (s) (next (restore-state new-state s)))]
            [functionreturn   (lambda (v s) (return v (restore-state new-state s)))]
            [functionbreak    (lambda (s) (loop-err))]
            [functioncontinue (lambda (s) (loop-err))]
            [functionthrow    (lambda (e s) (throw e (restore-state new-state s)))] )
-      (statement-list (get-body closure) (add-state-layer bound-state) functionnext functionreturn
+      (statement-list (get-body closure) (add-state-layer bound-state) type functionnext functionreturn
                       functionbreak functioncontinue functionthrow))))
 
 ; Restore state after a function call.
@@ -319,17 +334,17 @@
 
 ; Bind parameters wrapper
 (define bind-parameters
-  (lambda (formalparams actualparams new-state state next return break continue throw)
-    (bind-parameters-cps formalparams actualparams (add-state-layer new-state) state next return break continue throw)))
+  (lambda (formalparams actualparams new-state state type next return break continue throw)
+    (bind-parameters-cps formalparams actualparams (add-state-layer new-state) state type next return break continue throw)))
 
 ; Puts actual parameters into formal parameters
 (define bind-parameters-cps
-  (lambda (formalparams actualparams new-state state next return break continue throw)
+  (lambda (formalparams actualparams new-state state type next return break continue throw)
     (if (null? formalparams)
       new-state
-      (let ([result (evaluation (car actualparams) state next return break continue throw)])
+      (let ([result (evaluation (car actualparams) state type next return break continue throw)])
         (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
-                       (add-binding (car formalparams) (car result) new-state) (cdr result) next return break continue throw)))))
+                       (add-binding (car formalparams) (car result) new-state) (cdr result) type next return break continue throw)))))
        
 ; Define a function
 (define function
@@ -382,12 +397,16 @@
   (lambda (classclosure)
     (cadddr classclosure)))
 
+(define get-method-closure-list
+  (lambda (classclosure)
+    (cddddr classclosure)))
+
 (define get-method-closure
   (lambda (classclosure method-name)
     (let ([pos (return-pos-of-item method-name (get-method-names classclosure))])
       (if (eq? pos missing-err)
           missing-err
-          (return-item-at-pos pos (get-methods classclosure))))))
+          (return-item-at-pos pos (get-method-closure-list classclosure))))))
 
 (define class-closure?
   (lambda (x)
@@ -413,9 +432,22 @@
   (lambda (instance)
     (caddr instance)))
 
+;; Field values are always stored in the same order as field declarations in the class
+;; This enables compile-time type checking via index-based lookups
 (define get-field-at-pos
   (lambda (instance n)
   (list-ref (caddr instance) n)))
+
+;; Get the index of a field by name from a class field list
+;; Returns the 0-based position or missing-err if not found
+(define get-field-index-by-name
+  (lambda (field-name field-list)
+    (letrec ([search (lambda (lis idx)
+               (cond
+                 ((null? lis) missing-err)
+                 ((and (eq? 'var (car (car lis))) (eq? field-name (cadr (car lis)))) idx)
+                 (else (search (cdr lis) (+ idx 1)))))])
+      (search field-list 0))))
 
 (define lookup-field
   (lambda (instance field-name state)
@@ -423,11 +455,10 @@
         (let* ([classname (get-class instance)]
                [class-closure (value-of-binding (lookup-binding classname state))]
                [field-list (get-fields class-closure)]
-               [field-names (map (lambda (f) (if (eq? 'var (car f)) (cadr f) #f)) field-list)]
-               [pos (return-pos-of-item field-name field-names)])
+               [pos (get-field-index-by-name field-name field-list)])
           (if (eq? pos missing-err)
               missing-err
-              (return-item-at-pos pos (get-instance-fields instance))))
+              (list-ref (get-instance-fields instance) pos)))
         missing-err)))
 
 (define update-field
@@ -436,11 +467,11 @@
         (let* ([classname (get-class instance)]
                [class-closure (value-of-binding (lookup-binding classname state))]
                [field-list (get-fields class-closure)]
-               [field-names (map (lambda (f) (if (eq? 'var (car f)) (cadr f) #f)) field-list)]
-               [pos (return-pos-of-item field-name field-names)])
+               [pos (get-field-index-by-name field-name field-list)])
           (if (eq? pos missing-err)
               instance
-              (let ([updated-fields (replace-item-at-pos pos newval (get-instance-fields instance))])
+              (let* ([current-fields (get-instance-fields instance)]
+                     [updated-fields (append (take current-fields pos) (cons newval (drop current-fields (+ pos 1))))])
                 (make-instance-closure classname updated-fields))))
         instance)))
 
@@ -483,9 +514,14 @@
 ; Finds if a expression is a function or expression and acts accordingly
 (define evaluation
   (lambda (expr state type next return break continue throw)
-    (if (and (list? expr) (eq? (car expr) 'funcall))
-        (funcall (cdr expr) state next (lambda (v s) v) break continue throw)
+    (if (list? expr)
+        (cond
+          ((eq? (car expr) 'funcall) (funcall (cdr expr) state type next (lambda (v s) v) break continue throw))
+          ((eq? (car expr) 'new) (new (cdr expr) state type next (lambda (v s) v) break continue throw))
+          ((eq? (car expr) 'instanceclosure) (return-val expr))
+          (else (parse-err)))
         (expression expr state type next return break continue throw))))
+       
 
 ; evaluate a statement
 (define expression
@@ -679,7 +715,7 @@
 (define closure?
   (lambda (x)
     (or (and (list? x)
-         (= (length x) 4)
+         (= (length x) 5)
          (eq? 'funcclosure (car x)))
         (and (list? x)
              (= (length x) 5)
