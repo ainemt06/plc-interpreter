@@ -348,10 +348,10 @@
       (let* ([param-name (car formalparams)]
              [result (evaluation (car actualparams) state type next return break continue throw)]
              [param-value (if (eq? param-name 'this)
-                              (if closure-class (list 'this-binding (car result) closure-class) (car result))
-                              (car result))])
+                              (if closure-class (list 'this-bind (car result) closure-class) (car result))
+                               result)])
         (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
-                       (add-binding param-name param-value new-state) (cdr result) type next return break continue throw closure-class)))))
+                       (add-binding param-name param-value new-state) result type next return break continue throw closure-class)))))
        
 ; Define a function
 (define function
@@ -536,6 +536,7 @@
 (define evaluation
   (lambda (expr state type next return break continue throw)
         (cond
+          ((not (list? expr)) (expression expr state type next return break continue throw))
           ((eq? (car expr) 'funcall) (funcall (cdr expr) state type next (lambda (v s) v) break continue throw))
           ((eq? (car expr) 'new) (new (cdr expr) state type next (lambda (v s) v) break continue throw))
           ((eq? (car expr) 'dot) (evaluate-dot expr state))
@@ -743,7 +744,10 @@
              (eq? 'classclosure (car x)))
         (and (list? x)
              (= (length x) 3)
-             (eq? 'instanceclosure (car x))))))
+             (eq? 'instanceclosure (car x)))
+        (and (list? x)
+             (= (length x) 3)
+             (eq? 'this-bind (car x))))))
 
 ; Predicate: is this list a scope-level sublist (not a closure value)?
 (define scope-list?
