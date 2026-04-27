@@ -387,10 +387,19 @@
     (make-function-closure (operand2 lis) (operand3 lis) state class-name)))
 
 
+(define get-functions-from-body
+  (lambda (body)
+    (cond
+      ((null? body) '())
+      ((or (eq? 'function (car (car body))) (eq? 'static-function (car (car body))))
+       (cons (car body) (get-functions-from-body (cdr body))))
+      (else (get-functions-from-body (cdr body))))))
+
 (define make-class-closure
   (lambda (super body state class-name)
-    (let ([closurelist (map (lambda (f) (make-unparsed-function-closure f state class-name)) body)]) ; pass along classname for lookup 
-    (list 'classclosure super (generate-fields-list body) (generate-method-names-list body) closurelist))))
+    (let ([functions (get-functions-from-body body)])
+      (let ([closurelist (map (lambda (f) (make-unparsed-function-closure f state class-name)) functions)])
+        (list 'classclosure super (generate-fields-list body) (generate-method-names-list body) closurelist)))))
 
 (define get-superclass
   (lambda (classclosure)
@@ -530,13 +539,12 @@
 ; Finds if a expression is a function or expression and acts accordingly
 (define evaluation
   (lambda (expr state type next return break continue throw)
-    (if (list? expr)
         (cond
           ((eq? (car expr) 'funcall) (funcall (cdr expr) state type next (lambda (v s) v) break continue throw))
           ((eq? (car expr) 'new) (new (cdr expr) state type next (lambda (v s) v) break continue throw))
+          ((eq? (car expr) 'dot) (evaluate-dot expr state))
           ((eq? (car expr) 'instanceclosure) (return-val expr))
-          (else (parse-err)))
-        (expression expr state type next return break continue throw))))
+          (else (expression expr state type next return break continue throw)))))
        
 
 ; evaluate a statement
@@ -550,7 +558,7 @@
               (return-val bool-binding))
           (return-val int-binding)))))
 
-; Evaluate an arithmetic expression(define int-value
+; Evaluate an arithmetic expression
 (define int-value
 (lambda (expr state type next return break continue throw)
     (cond 
@@ -611,11 +619,13 @@
       ((number? atom) atom) ; return a literal number
       ((and (list? atom) (eq? 'dot (car atom))) (evaluate-dot atom state))
       ((symbol? atom)
-       (let ([this-binding (lookup-binding 'this state)])
-         (if (not (eq? (car this-binding) missing-err))
-             (evaluate-dot (list 'dot 'this atom) state)
-             (let ([val (value-of-binding (lookup-binding atom state))])
-               (if (number? val) val type-err)))))
+       (let ([val (value-of-binding (lookup-binding atom state))])
+         (if (number? val)
+             val
+             (let ([this-binding (lookup-binding 'this state)])
+               (if (not (eq? (car this-binding) missing-err))
+                   (evaluate-dot (list 'dot 'this atom) state)
+                   type-err)))))
       (else type-err))))   
 
 ; Evaluates the boolean value of a mapping
@@ -627,15 +637,14 @@
       ((eq? 'true atom) #t) ; return a literal boolean
       ((and (list? atom) (eq? 'dot (car atom))) (evaluate-dot atom state))
       ((symbol? atom)
-       (let ([this-binding (lookup-binding 'this state)])
-         (if (not (eq? (car this-binding) missing-err))
-             (evaluate-dot (list 'dot 'this atom) state)
-             (let ([val (value-of-binding (lookup-binding atom state))])
-               (if (boolean? val) val type-err)))))
-      (else (let ([val (value-of-binding (lookup-binding atom state))])
-              (if (boolean? val) ; check if this var is mapped to a boolean
-                  val
-                  type-err))))))
+       (let ([val (value-of-binding (lookup-binding atom state))])
+         (if (boolean? val)
+             val
+             (let ([this-binding (lookup-binding 'this state)])
+               (if (not (eq? (car this-binding) missing-err))
+                   (evaluate-dot (list 'dot 'this atom) state)
+                   type-err)))))
+      (else type-err))))
 
 ; Check if this symbol is mapped to a value
 (define m-name
