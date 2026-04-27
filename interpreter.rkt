@@ -756,7 +756,7 @@
 ; Predicate: is this list a scope-level sublist (not a closure value)?
 (define scope-list?
   (lambda (x)
-    (and (list? x) (not (closure? x))))
+    (and (list? x) (not (closure? x)))))
 
 ; Return position of an item in a list
 (define return-pos-of-item-cps
