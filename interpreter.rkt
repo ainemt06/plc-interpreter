@@ -202,13 +202,17 @@
 (define assign
   (lambda (expr state type next return break continue throw)
     (let ([result (evaluation (operand2 expr) state type next return break continue throw)])
-      (cond
-        ((and (list? (operand1 expr)) (eq? 'dot (car (operand1 expr))))
-         (next (update-dot (operand1 expr) (car result) (cdr result))))
-        ((not (eq? (car (lookup-binding 'this state)) missing-err))
-         (next (update-dot (list 'dot 'this (operand1 expr)) (car result) (cdr result))))
-        (else
-         (next (update-binding (operand1 expr) (car result) (cdr result))))))))
+      (let* ([var-name (operand1 expr)]
+             [local-binding (lookup-binding var-name state)])
+        (cond
+          ((and (list? var-name) (eq? 'dot (car var-name)))
+           (next (update-dot var-name (car result) (cdr result))))
+          ((not (eq? (car local-binding) missing-err))
+           (next (update-binding var-name (car result) (cdr result))))
+          ((not (eq? (car (lookup-binding 'this state)) missing-err))
+           (next (update-dot (list 'dot 'this var-name) (car result) (cdr result))))
+          (else
+           (next (update-binding var-name (car result) (cdr result)))))))))
 
 ; Return/print the value of this statement
 (define return-statement
@@ -752,7 +756,7 @@
 ; Predicate: is this list a scope-level sublist (not a closure value)?
 (define scope-list?
   (lambda (x)
-    (and (list? x) (not (closure? x)))))
+    (and (list? x) (not (closure? x))))
 
 ; Return position of an item in a list
 (define return-pos-of-item-cps
