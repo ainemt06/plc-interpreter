@@ -310,13 +310,16 @@
                              (get-method-closure class-closure method-name)
                              (value-of-binding (lookup-binding name state)))]
            [actual-params (if is-method? (append params (list receiver-val)) params)]
+           [closure-class    (if (function-closure? closure)
+                                 (get-closure-class closure)
+                                 #f)]
            [new-state     (get-environment closure state)]
-           [bound-state   (bind-parameters (get-params closure) actual-params (add-state-layer new-state) state type next return break continue throw)]
+           [bound-state   (bind-parameters (get-params closure) actual-params (add-state-layer new-state) state type next return break continue throw closure-class)]
            [functionnext     (lambda (s) (next (restore-state new-state s)))]
            [functionreturn   (lambda (v s) (return v (restore-state new-state s)))]
            [functionbreak    (lambda (s) (loop-err))]
            [functioncontinue (lambda (s) (loop-err))]
-           [functionthrow    (lambda (e s) (throw e (restore-state new-state s)))] )
+           [functionthrow    (lambda (e s) (throw e (restore-state new-state s)))])
       (statement-list (get-body closure) (add-state-layer bound-state) type functionnext functionreturn
                       functionbreak functioncontinue functionthrow))))
 
@@ -334,17 +337,21 @@
 
 ; Bind parameters wrapper
 (define bind-parameters
-  (lambda (formalparams actualparams new-state state type next return break continue throw)
-    (bind-parameters-cps formalparams actualparams (add-state-layer new-state) state type next return break continue throw)))
+  (lambda (formalparams actualparams new-state state type next return break continue throw closure-class)
+    (bind-parameters-cps formalparams actualparams (add-state-layer new-state) state type next return break continue throw closure-class)))
 
 ; Puts actual parameters into formal parameters
 (define bind-parameters-cps
-  (lambda (formalparams actualparams new-state state type next return break continue throw)
+  (lambda (formalparams actualparams new-state state type next return break continue throw closure-class)
     (if (null? formalparams)
       new-state
-      (let ([result (evaluation (car actualparams) state type next return break continue throw)])
+      (let* ([param-name (car formalparams)]
+             [result (evaluation (car actualparams) state type next return break continue throw)]
+             [param-value (if (eq? param-name 'this)
+                              (if closure-class (list 'this-binding (car result) closure-class) (car result))
+                              (car result))])
         (bind-parameters-cps (cdr formalparams) (cdr actualparams) 
-                       (add-binding (car formalparams) (car result) new-state) (cdr result) type next return break continue throw)))))
+                       (add-binding param-name param-value new-state) (cdr result) type next return break continue throw closure-class)))))
        
 ; Define a function
 (define function
@@ -437,6 +444,11 @@
 (define get-field-at-pos
   (lambda (instance n)
   (list-ref (caddr instance) n)))
+
+; Get class name from position 4 in the function closure
+(define get-closure-class
+  (lambda (closure)
+    (list-ref closure 4)))
 
 ;; Get the index of a field by name from a class field list
 ;; Returns the 0-based position or missing-err if not found
