@@ -10,6 +10,9 @@
 ;;;; INTERPRET
 ;;;; ---------------------------------------------------------
 
+;; We tried to get polymorphism working, but got stuck in an infinite loop of accessing "super" and 
+;; ran out of time
+
 ; Parse a file, then interpret it with the initial state
 (define interpret
   (lambda (filename class-name)
@@ -270,12 +273,12 @@
 ; Getting parameters of a funciton
   (define get-params
     (lambda (closure)
-    (cadr closure)))   ; was car — skipped over 'funcclosure tag
+    (cadr closure)))   
 
 ; Getting the body of a function
 (define get-body
   (lambda (closure)
-    (caddr closure)))  ; was cadr — same issue
+    (caddr closure)))  
 
 ; Getting the enviornment of a function
 (define get-environment
@@ -285,12 +288,6 @@
                     (return-end-of-list numlayers (get-state-values state))))))
 
 ; Steps to call a function, establish functional next, return, break, continue, throw
-; run the function with these
-
-; we don't want to store that old state - grab the current values or just the state layers in common
-
-; strip off everything in scope
-; then restore and find out what has changed
 (define funcall
   (lambda (expr state type next return break continue throw)
     (let* ([name          (operator expr)]
@@ -333,8 +330,6 @@
                       functionbreak functioncontinue functionthrow))))
 
 ; Restore state after a function call.
-; Drop the function's own local layer and the parameter layer,
-; preserve updates to the captured environment layers.
 (define restore-state
   (lambda (activestate functionstate)
     (let* ([function-values (get-state-values functionstate)]
@@ -372,6 +367,7 @@
           [body (operand3 expr)]) 
           (next (add-binding name (make-function-closure formal-params body state) state)))))
 
+;Define a class
 (define class
   (lambda (expr state type next return break continue throw)
     (let ([name (operand1 expr)]
@@ -380,11 +376,6 @@
           (next (add-binding name (make-class-closure superclass body state name) state))))) ; pass in name for lookup of this in functions
 
 ; Make a function closure
-; A function has a closure that consists of:
-;   (param-list body layers-deep-for-state-lookup class-name)
-;class name is passed along and stored plainly for ease of lookup
-; layers is a number for get-enviornment to use
-; add this to param-list by cons
 (define make-function-closure
   (lambda (param-list body state class-name)
     (list 'funcclosure (append param-list (list 'this)) body (length (get-state-names state)) class-name)))
@@ -393,7 +384,7 @@
   (lambda (lis state class-name) ; pass along class name for lookup
     (make-function-closure (operand2 lis) (operand3 lis) state class-name)))
 
-
+; Pull just the functions out of the meat of a class
 (define get-functions-from-body
   (lambda (body)
     (cond
@@ -402,6 +393,7 @@
        (cons (car body) (get-functions-from-body (cdr body))))
       (else (get-functions-from-body (cdr body))))))
 
+; Make the class closure
 (define make-class-closure
   (lambda (super body state class-name)
     (let ([functions (get-functions-from-body body)])
@@ -459,17 +451,14 @@
   (lambda (instance)
     (caddr instance)))
 
-;; Extract the actual instance closure from a potential this-bind wrapper
-;; Both instanceclosure and this-bind have structure (tag classname fields)
-;; so no extraction needed - return as-is
+; Extract the actual instance closure from a potential this-bind wrapper
 (define extract-instance
   (lambda (val)
     (if (list? (car val))
         (car val)
         val)))
 
-;; Field values are always stored in the same order as field declarations in the class
-;; This enables compile-time type checking via index-based lookups
+; Get the field that corresponds to the nth position
 (define get-field-at-pos
   (lambda (instance n)
   (list-ref (caddr instance) n)))
@@ -479,8 +468,7 @@
   (lambda (closure)
     (list-ref closure 4)))
 
-;; Get the index of a field by name from a class field list
-;; Returns the 0-based position or missing-err if not found
+; Get the index of a field by name from a class field list
 (define get-field-index-by-name
   (lambda (field-name field-list)
     (letrec ([search (lambda (lis idx)
@@ -490,6 +478,7 @@
                  (else (search (cdr lis) (+ idx 1)))))])
       (search field-list 0))))
 
+; Pick out a field from an instance
 (define lookup-field
   (lambda (instance field-name state)
     (if (instance-closure? instance)
@@ -502,6 +491,7 @@
               (list-ref (get-instance-fields instance) pos)))
         missing-err)))
 
+; Update a field in an instance
 (define update-field
   (lambda (instance field-name newval state)
     (if (instance-closure? instance)
@@ -516,6 +506,7 @@
                 (make-instance-closure classname updated-fields))))
         instance)))
 
+;Evaluate a dot
 (define evaluate-dot
   (lambda (dot-expr state type next return break continue throw)
     (let* ([receiver-expr (cadr dot-expr)]
@@ -529,7 +520,7 @@
       (lookup-field receiver field-name state))))
 
 
-
+; Update a dot
 (define update-dot
   (lambda (dot-expr newval state)
     (let* ([receiver-expr (cadr dot-expr)]
@@ -545,6 +536,7 @@
                  [updated-receiver (update-field receiver field-name newval inner-state)])
             (update-binding receiver-expr updated-receiver inner-state))))))
 
+; Generate a list of fields
 (define generate-fields-list
   (lambda (lis)
     (cond
@@ -552,6 +544,7 @@
       ((eq? 'var (car (car lis))) (cons (car lis) (generate-fields-list (cdr lis))))
       (else (generate-fields-list (cdr lis))))))
 
+; Generate a list of method names
 (define generate-method-names-list
   (lambda (lis)
     (cond
